@@ -19,9 +19,12 @@
 
 package com.defname.unlimitedondemandautoreply
 
-
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
@@ -34,58 +37,212 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import java.security.MessageDigest
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.random.Random
+
+private const val SETTINGS_PREFS = "settings"
+private const val STATE_PREFS = "runtime_state"
+private const val SMS_SENT_ACTION = "com.defname.unlimitedondemandautoreply.SMS_SENT"
+private const val DEFAULT_MIN_DELAY_SECONDS = 5L
+private const val DEFAULT_MAX_DELAY_SECONDS = 30L
+private const val DEFAULT_COOLDOWN_MS = 15L * 60L * 1000L
+private const val DEFAULT_DEDUPE_WINDOW_MS = 10L * 60L * 1000L
+private const val DEFAULT_DAILY_LIMIT = 3
 
 /**
  * NotificationService that runs in the background and listens for incoming notifications.
- * If a notification matches the specified criteria, it will send an SMS to the specified number
- * after a random delay.
+ * If a notification matches the configured criteria, it schedules one SMS after a random delay.
  */
 class MyNotificationListenerService : NotificationListenerService() {
-    /**
-     * Handle incoming notifications.
-     */
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        // extract the information of the notification
-        val packageName = sbn.packageName
+        val packageName = sbn.packageName.orEmpty()
         val extras = sbn.notification.extras
-        val title = extras.getString("android.title")
-        val text = extras.getCharSequence("android.text")
+        val title = extras.getString("android.title").orEmpty()
+        val text = notificationText(extras)
 
-        // read the settings from SharedPreferences
-        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
-        val smsApp = prefs.getString("sms_app", "")
-        val titleMatch = prefs.getString("title_match", "")
-        val bodyMatch = prefs.getString("body_match", "")
-        val number = prefs.getString("number", "")
-        val answer = prefs.getString("answer", "")
-        val minDelay = prefs.getString("min_delay", "5")?.toLongOrNull() ?: 5
-        val maxDelay = prefs.getString("max_delay", "30")?.toLongOrNull() ?: 30
+        val prefs = getSharedPreferences(SETTINGS_PREFS, MODE_PRIVATE)
+        val smsApp = prefs.getString("sms_app", "").orEmpty().trim()
+        val titleMatch = prefs.getString("title_match", "").orEmpty().trim()
+        val bodyMatch = prefs.getString("body_match", "").orEmpty().trim()
+        val number = prefs.getString("number", "").orEmpty().trim()
+        val answer = prefs.getString("answer", "").orEmpty()
+        val minDelay = prefs.getString("min_delay", DEFAULT_MIN_DELAY_SECONDS.toString())
+            ?.toLongOrNull()
+            ?: DEFAULT_MIN_DELAY_SECONDS
+        val maxDelay = prefs.getString("max_delay", DEFAULT_MAX_DELAY_SECONDS.toString())
+            ?.toLongOrNull()
+            ?: DEFAULT_MAX_DELAY_SECONDS
 
-        // calculate a random delay within the specified range (ensure max > min)
-        val minMillis = minDelay * 1000
-        val maxMillis = maxOf(minMillis + 1000, maxDelay * 1000)
-        val delay = Random.nextLong(minMillis, maxMillis)
-
-        Log.d("NotifListener", "onNotificationPosted")
-        Log.d("NotifListener", "from: $packageName")
-        Log.d("NotifListener", "title: $title")
-        Log.d("NotifListener", "text: $text")
-
-        // check if the notification matches the specified criteria
-        if (packageName.equals(smsApp) && (title != null && title.contains(titleMatch ?: ""))
-            && (text != null && text.contains(bodyMatch.toString()))) {
-            Log.d("NotifListener", "Notification matched")
-            LogManager.addLog("Notification matched. Waiting for ${delay/1000}s...")
-
-            // send the SMS after the specified delay
-            Handler(Looper.getMainLooper()).postDelayed({
-                sendSMS(number.toString(), answer.toString())
-            }, delay)
+        if (!isConfigComplete(smsApp, titleMatch, bodyMatch, number, answer)) {
+            LogManager.addLog("Skipped: configuration incomplete")
+            Log.d("NotifListener", "Skipped notification: configuration incomplete")
+            return
         }
+
+        if (!matchesConfiguredNotification(packageName, smsApp, title, titleMatch, text, bodyMatch)) {
+            Log.d("NotifListener", "Notification ignored: no configured match")
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        val statePrefs = getSharedPreferences(STATE_PREFS, MODE_PRIVATE)
+        val notificationKey = stableHash(
+            listOf(packageName, normalizeForMatch(title), normalizeForMatch(text), sbn.id.toString())
+                .joinToString("|")
+        )
+
+        if (isDuplicate(statePrefs, notificationKey, now)) {
+            LogManager.addLog("Skipped: duplicate notification within dedupe window")
+            return
+        }
+
+        if (isInCooldown(statePrefs, now)) {
+            LogManager.addLog("Skipped: cooldown active")
+            return
+        }
+
+        if (dailyLimitReached(statePrefs, now)) {
+            LogManager.addLog("Skipped: daily limit reached")
+            return
+        }
+
+        val sanitizedPhone = sanitizePhoneNumber(number)
+        if (sanitizedPhone.isBlank()) {
+            LogManager.addLog("Skipped: target number invalid")
+            return
+        }
+
+        val delay = calculateDelayMillis(minDelay, maxDelay)
+        val sendId = "$now-${notificationKey.take(12)}"
+
+        markScheduled(statePrefs, notificationKey, now)
+        LogManager.addLog("Notification matched. SMS scheduled in ${delay / 1000}s.")
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            sendSMS(sanitizedPhone, answer, sendId)
+        }, delay)
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        // No-op.
+    }
+
+    private fun notificationText(extras: android.os.Bundle): String {
+        val text = extras.getCharSequence("android.text")?.toString().orEmpty()
+        val bigText = extras.getCharSequence("android.bigText")?.toString().orEmpty()
+
+        return listOf(text, bigText)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString("\n")
+    }
+
+    private fun isConfigComplete(
+        smsApp: String,
+        titleMatch: String,
+        bodyMatch: String,
+        number: String,
+        answer: String
+    ): Boolean {
+        return smsApp.isNotBlank() &&
+            titleMatch.isNotBlank() &&
+            bodyMatch.isNotBlank() &&
+            number.isNotBlank() &&
+            answer.isNotBlank()
+    }
+
+    private fun matchesConfiguredNotification(
+        packageName: String,
+        smsApp: String,
+        title: String,
+        titleMatch: String,
+        text: String,
+        bodyMatch: String
+    ): Boolean {
+        if (packageName != smsApp) return false
+
+        val normalizedTitle = normalizeForMatch(title)
+        val normalizedTitleMatch = normalizeForMatch(titleMatch)
+        val normalizedText = normalizeForMatch(text)
+        val normalizedBodyMatch = normalizeForMatch(bodyMatch)
+
+        return normalizedTitle.contains(normalizedTitleMatch) &&
+            normalizedText.contains(normalizedBodyMatch)
+    }
+
+    private fun calculateDelayMillis(minDelaySeconds: Long, maxDelaySeconds: Long): Long {
+        val safeMinSeconds = minDelaySeconds.coerceAtLeast(0L)
+        val safeMaxSeconds = maxDelaySeconds.coerceAtLeast(safeMinSeconds + 1L)
+        val minMillis = safeMinSeconds * 1000L
+        val maxMillis = safeMaxSeconds * 1000L
+
+        return Random.nextLong(minMillis, maxMillis)
+    }
+
+    private fun isDuplicate(
+        prefs: android.content.SharedPreferences,
+        notificationKey: String,
+        now: Long
+    ): Boolean {
+        val lastKey = prefs.getString("last_notification_key", "").orEmpty()
+        val lastAt = prefs.getLong("last_notification_at", 0L)
+
+        return lastKey == notificationKey && now - lastAt < DEFAULT_DEDUPE_WINDOW_MS
+    }
+
+    private fun isInCooldown(prefs: android.content.SharedPreferences, now: Long): Boolean {
+        val lastSendAt = prefs.getLong("last_send_at", 0L)
+        return lastSendAt > 0L && now - lastSendAt < DEFAULT_COOLDOWN_MS
+    }
+
+    private fun dailyLimitReached(prefs: android.content.SharedPreferences, now: Long): Boolean {
+        val today = dateKey(now)
+        val storedDay = prefs.getString("daily_limit_date", "").orEmpty()
+        val count = if (storedDay == today) prefs.getInt("daily_send_count", 0) else 0
+
+        return count >= DEFAULT_DAILY_LIMIT
+    }
+
+    private fun markScheduled(
+        prefs: android.content.SharedPreferences,
+        notificationKey: String,
+        now: Long
+    ) {
+        val today = dateKey(now)
+        val storedDay = prefs.getString("daily_limit_date", "").orEmpty()
+        val previousCount = if (storedDay == today) prefs.getInt("daily_send_count", 0) else 0
+
+        prefs.edit()
+            .putString("last_notification_key", notificationKey)
+            .putLong("last_notification_at", now)
+            .putLong("last_send_at", now)
+            .putString("daily_limit_date", today)
+            .putInt("daily_send_count", previousCount + 1)
+            .apply()
+    }
+
+    private fun dateKey(timestamp: Long): String {
+        return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(timestamp))
+    }
+
+    private fun normalizeForMatch(value: String): String {
+        return value.trim().lowercase(Locale.ROOT)
+    }
+
+    private fun sanitizePhoneNumber(value: String): String {
+        return value.filter { it.isDigit() || it == '+' }
+    }
+
+    private fun stableHash(value: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+
+        return digest.joinToString("") { "%02x".format(it) }
     }
 
     /**
@@ -95,15 +252,14 @@ class MyNotificationListenerService : NotificationListenerService() {
         val channelId = "unlimitedondemandautoreply_notification_channel"
         val channelName = "UnlimitedOnDemand Auto Reply"
 
-        // check permissions
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(
                 this,
                 android.Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED) {
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
             return
         }
 
-        // Create channel (>= API 26)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
@@ -118,14 +274,12 @@ class MyNotificationListenerService : NotificationListenerService() {
             notificationManager.createNotificationChannel(channel)
         }
 
-        // create notification
         val builder = NotificationCompat.Builder(applicationContext, channelId)
-            .setSmallIcon(android.R.drawable.ic_dialog_info) // Verwende ein eigenes Icon in produktiver App
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
             .setContentText(message)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
 
-        // post notification
         with(NotificationManagerCompat.from(applicationContext)) {
             notify(System.currentTimeMillis().toInt(), builder.build())
         }
@@ -134,77 +288,76 @@ class MyNotificationListenerService : NotificationListenerService() {
     /**
      * Send an SMS to the given number with the given message.
      */
-    private fun sendSMS(number: String, msg: String) {
+    private fun sendSMS(number: String, msg: String, sendId: String) {
         try {
-            val phone = number.filter { it.isDigit() || it == '+' }
-
-            if (phone.isEmpty()) {
+            if (number.isBlank()) {
                 throw IllegalArgumentException("Phone number is empty after filtering")
             }
 
             val smsManager = getSystemService(SmsManager::class.java)
-            if (smsManager == null) {
-                throw IllegalStateException("SmsManager service not available")
+                ?: throw IllegalStateException("SmsManager service not available")
+
+            val intent = Intent(SMS_SENT_ACTION).apply {
+                setPackage(packageName)
+                putExtra("send_id", sendId)
             }
 
-            val intent = android.content.Intent("SMS_SENT")
-            intent.setPackage(packageName)
+            val requestCode = sendId.hashCode()
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            } else {
+                PendingIntent.FLAG_UPDATE_CURRENT
+            }
 
-            val sentIntent = android.app.PendingIntent.getBroadcast(
+            val sentIntent = PendingIntent.getBroadcast(
                 this,
-                0,
+                requestCode,
                 intent,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-                    android.app.PendingIntent.FLAG_IMMUTABLE
-                else 0
+                flags
             )
 
-            smsManager.sendTextMessage(phone, null, msg, sentIntent, null)
-            Log.d("NotifListener", "SMS process started for $phone")
+            smsManager.sendTextMessage(number, null, msg, sentIntent, null)
+            Log.d("NotifListener", "SMS process started")
+            LogManager.addLog("SMS send requested")
 
         } catch (e: Exception) {
             Log.e("NotifListener", "Error sending SMS: ${e.message}")
-            // Fehler als Toast (Meldung unten) anzeigen
             Toast.makeText(this, "SMS Error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
             LogManager.addLog("SMS Error: ${e.localizedMessage}")
         }
     }
 
-    private val smsStatusReceiver = object : android.content.BroadcastReceiver() {
-        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+    private val smsStatusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
             val code = resultCode
             val message = when (code) {
-                android.app.Activity.RESULT_OK -> "SMS sent successfully!"
-                SmsManager.RESULT_ERROR_GENERIC_FAILURE -> "Error: Generic failure (maybe no balance?)"
-                SmsManager.RESULT_ERROR_NO_SERVICE -> "Error: No service (no network)"
-                SmsManager.RESULT_ERROR_NULL_PDU -> "Error: PDU empty"
-                SmsManager.RESULT_ERROR_RADIO_OFF -> "Error: Airplane mode active"
-                // This case usually happens if permission is denied or revoked
-                else -> "SMS delivery failed (Code: $code). Permission missing?"
+                android.app.Activity.RESULT_OK -> "SMS sent successfully"
+                SmsManager.RESULT_ERROR_GENERIC_FAILURE -> "Error: generic SMS failure"
+                SmsManager.RESULT_ERROR_NO_SERVICE -> "Error: no mobile service"
+                SmsManager.RESULT_ERROR_NULL_PDU -> "Error: empty SMS PDU"
+                SmsManager.RESULT_ERROR_RADIO_OFF -> "Error: radio off"
+                else -> "SMS send failed (code $code)"
             }
 
-            Log.d("NotifListener", "Receiver Result: $code -> $message")
+            Log.d("NotifListener", "Receiver Result: $code")
             LogManager.addLog(message)
-            // Optional: Benachrichtigung anzeigen
             showNotification("SMS Status", message)
         }
     }
 
     override fun onCreate() {
         super.onCreate()
-        // Den Receiver beim Start des Service registrieren
-        val filter = android.content.IntentFilter("SMS_SENT")
+
         ContextCompat.registerReceiver(
             this,
             smsStatusReceiver,
-            filter,
+            IntentFilter(SMS_SENT_ACTION),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        // Wichtig: Wieder abmelden
         unregisterReceiver(smsStatusReceiver)
     }
 }
