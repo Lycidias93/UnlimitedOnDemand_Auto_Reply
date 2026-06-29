@@ -160,6 +160,7 @@ class MainActivity : ComponentActivity() {
             "answer" -> "2"
             "min_delay" -> "5"
             "max_delay" -> "30"
+            "dry_run" -> "false"
             else -> ""
         }
     }
@@ -188,6 +189,7 @@ fun SettingsScreen(
     var answer by remember { mutableStateOf(onGetSetting("answer")) }
     var minDelay by remember { mutableStateOf(onGetSetting("min_delay")) }
     var maxDelay by remember { mutableStateOf(onGetSetting("max_delay")) }
+    var dryRun by remember { mutableStateOf(onGetSetting("dry_run").toBooleanStrictOrNull() ?: false) }
 
     // Aktualisieren Sie den Status, wenn die Composable-Funktion neu zusammengesetzt wird (z. B. nach onResume)
     LaunchedEffect(Unit) {
@@ -202,6 +204,7 @@ fun SettingsScreen(
         answer = onGetSetting("answer")
         minDelay = onGetSetting("min_delay")
         maxDelay = onGetSetting("max_delay")
+        dryRun = onGetSetting("dry_run").toBooleanStrictOrNull() ?: false
     }
 
 
@@ -262,6 +265,57 @@ fun SettingsScreen(
                 onRequestNotificationService()
             }) {
                 Text(stringResource(R.string.enable_notification_listener_btn))
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = if (dryRun) "Dry run mode: ON (no SMS will be sent)" else "Dry run mode: OFF",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                androidx.compose.material3.Switch(
+                    checked = dryRun,
+                    onCheckedChange = { enabled ->
+                        dryRun = enabled
+                        onSaveSetting("dry_run", enabled.toString())
+                        LogManager.addLog(if (enabled) "Dry run enabled" else "Dry run disabled")
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                androidx.compose.material3.Button(
+                    onClick = {
+                        val complete = smsAppPackage.isNotBlank() &&
+                            titleMatch.isNotBlank() &&
+                            bodyMatch.isNotBlank() &&
+                            number.isNotBlank() &&
+                            answer.isNotBlank() &&
+                            minDelay.isNotBlank() &&
+                            maxDelay.isNotBlank()
+                        if (complete) {
+                            LogManager.addLog("Test config: complete; dry_run=$dryRun; target configured")
+                        } else {
+                            LogManager.addLog("Test config: incomplete")
+                        }
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
+                ) {
+                    Text("Test current config")
+                }
+
+                androidx.compose.material3.Button(
+                    onClick = { LogManager.clearLogs() },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Clear logs")
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))

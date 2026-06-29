@@ -19,4 +19,8 @@ object LogManager {
         // Optional: Begrenze die Liste auf z.B. 100 Einträge, um Speicher zu sparen
         if (logs.size > 100) logs.removeAt(logs.lastIndex)
     }
+
+    fun clearLogs() {
+        logs.clear()
+    }
 }
