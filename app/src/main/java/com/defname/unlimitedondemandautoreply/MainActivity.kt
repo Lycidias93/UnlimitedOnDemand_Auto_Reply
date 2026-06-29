@@ -147,7 +147,21 @@ class MainActivity : ComponentActivity() {
 
     fun getSetting(key: String): String {
         val prefs = getSharedPreferences("settings", MODE_PRIVATE)
-        return prefs.getString(key, "") ?: ""
+        val value = prefs.getString(key, null)
+        return value?.takeIf { it.isNotBlank() } ?: defaultSetting(key)
+    }
+
+    private fun defaultSetting(key: String): String {
+        return when (key) {
+            "sms_app" -> "com.google.android.apps.messaging"
+            "title_match" -> "10118"
+            "body_match" -> "Vollspeed"
+            "number" -> "10118"
+            "answer" -> "2"
+            "min_delay" -> "5"
+            "max_delay" -> "30"
+            else -> ""
+        }
     }
 }
 

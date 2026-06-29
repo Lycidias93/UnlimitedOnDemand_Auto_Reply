@@ -48,6 +48,11 @@ private const val STATE_PREFS = "runtime_state"
 private const val SMS_SENT_ACTION = "com.defname.unlimitedondemandautoreply.SMS_SENT"
 private const val DEFAULT_MIN_DELAY_SECONDS = 5L
 private const val DEFAULT_MAX_DELAY_SECONDS = 30L
+private const val DEFAULT_SMS_APP = "com.google.android.apps.messaging"
+private const val DEFAULT_TITLE_MATCH = "10118"
+private const val DEFAULT_BODY_MATCH = "Vollspeed"
+private const val DEFAULT_TARGET_NUMBER = "10118"
+private const val DEFAULT_ANSWER = "2"
 private const val DEFAULT_COOLDOWN_MS = 15L * 60L * 1000L
 private const val DEFAULT_DEDUPE_WINDOW_MS = 10L * 60L * 1000L
 private const val DEFAULT_DAILY_LIMIT = 3
@@ -65,17 +70,13 @@ class MyNotificationListenerService : NotificationListenerService() {
         val text = notificationText(extras)
 
         val prefs = getSharedPreferences(SETTINGS_PREFS, MODE_PRIVATE)
-        val smsApp = prefs.getString("sms_app", "").orEmpty().trim()
-        val titleMatch = prefs.getString("title_match", "").orEmpty().trim()
-        val bodyMatch = prefs.getString("body_match", "").orEmpty().trim()
-        val number = prefs.getString("number", "").orEmpty().trim()
-        val answer = prefs.getString("answer", "").orEmpty()
-        val minDelay = prefs.getString("min_delay", DEFAULT_MIN_DELAY_SECONDS.toString())
-            ?.toLongOrNull()
-            ?: DEFAULT_MIN_DELAY_SECONDS
-        val maxDelay = prefs.getString("max_delay", DEFAULT_MAX_DELAY_SECONDS.toString())
-            ?.toLongOrNull()
-            ?: DEFAULT_MAX_DELAY_SECONDS
+        val smsApp = readSetting(prefs, "sms_app", DEFAULT_SMS_APP).trim()
+        val titleMatch = readSetting(prefs, "title_match", DEFAULT_TITLE_MATCH).trim()
+        val bodyMatch = readSetting(prefs, "body_match", DEFAULT_BODY_MATCH).trim()
+        val number = readSetting(prefs, "number", DEFAULT_TARGET_NUMBER).trim()
+        val answer = readSetting(prefs, "answer", DEFAULT_ANSWER)
+        val minDelay = readDelaySetting(prefs, "min_delay", DEFAULT_MIN_DELAY_SECONDS)
+        val maxDelay = readDelaySetting(prefs, "max_delay", DEFAULT_MAX_DELAY_SECONDS)
 
         if (!isConfigComplete(smsApp, titleMatch, bodyMatch, number, answer)) {
             LogManager.addLog("Skipped: configuration incomplete")
@@ -129,6 +130,24 @@ class MyNotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         // No-op.
+    }
+
+    private fun readSetting(
+        prefs: android.content.SharedPreferences,
+        key: String,
+        defaultValue: String
+    ): String {
+        val value = prefs.getString(key, null)
+        return value?.takeIf { it.isNotBlank() } ?: defaultValue
+    }
+
+    private fun readDelaySetting(
+        prefs: android.content.SharedPreferences,
+        key: String,
+        defaultValue: Long
+    ): Long {
+        val value = prefs.getString(key, null)
+        return value?.takeIf { it.isNotBlank() }?.toLongOrNull() ?: defaultValue
     }
 
     private fun notificationText(extras: android.os.Bundle): String {
