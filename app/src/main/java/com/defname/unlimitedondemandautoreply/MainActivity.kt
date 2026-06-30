@@ -85,6 +85,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        LogManager.init(applicationContext)
 
         setContent {
             SmsTestAppTheme {

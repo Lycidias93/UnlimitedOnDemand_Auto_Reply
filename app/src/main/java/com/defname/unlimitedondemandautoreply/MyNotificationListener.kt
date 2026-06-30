@@ -65,6 +65,7 @@ private const val DEFAULT_DAILY_LIMIT = 3
 class MyNotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        LogManager.init(applicationContext)
         val packageName = sbn.packageName.orEmpty()
         val extras = sbn.notification.extras
         val title = extras.getString("android.title").orEmpty()
