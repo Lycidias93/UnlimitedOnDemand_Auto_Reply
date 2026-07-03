@@ -161,6 +161,8 @@ class MainActivity : ComponentActivity() {
             "answer" -> "2"
             "min_delay" -> "5"
             "max_delay" -> "30"
+            "profile_name" -> "O2/Freenet Vollspeed"
+            "profile_enabled" -> "true"
             "dry_run" -> "false"
             else -> ""
         }
@@ -190,6 +192,8 @@ fun SettingsScreen(
     var answer by remember { mutableStateOf(onGetSetting("answer")) }
     var minDelay by remember { mutableStateOf(onGetSetting("min_delay")) }
     var maxDelay by remember { mutableStateOf(onGetSetting("max_delay")) }
+    var profileName by remember { mutableStateOf(onGetSetting("profile_name")) }
+    var profileEnabled by remember { mutableStateOf(onGetSetting("profile_enabled").toBooleanStrictOrNull() ?: true) }
     var dryRun by remember { mutableStateOf(onGetSetting("dry_run").toBooleanStrictOrNull() ?: false) }
 
     // Aktualisieren Sie den Status, wenn die Composable-Funktion neu zusammengesetzt wird (z. B. nach onResume)
@@ -205,6 +209,8 @@ fun SettingsScreen(
         answer = onGetSetting("answer")
         minDelay = onGetSetting("min_delay")
         maxDelay = onGetSetting("max_delay")
+        profileName = onGetSetting("profile_name")
+        profileEnabled = onGetSetting("profile_enabled").toBooleanStrictOrNull() ?: true
         dryRun = onGetSetting("dry_run").toBooleanStrictOrNull() ?: false
     }
 
@@ -270,6 +276,37 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            OutlinedTextField(
+                value = profileName,
+                onValueChange = {
+                    profileName = it
+                    onSaveSetting("profile_name", it)
+                },
+                label = { Text("Profile name") },
+                placeholder = { Text("O2/Freenet Vollspeed") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = if (profileEnabled) "Profile enabled: ON" else "Profile enabled: OFF",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                androidx.compose.material3.Switch(
+                    checked = profileEnabled,
+                    onCheckedChange = { enabled ->
+                        profileEnabled = enabled
+                        onSaveSetting("profile_enabled", enabled.toString())
+                        LogManager.addLog(if (enabled) "Profile enabled" else "Profile disabled")
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             Row(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = if (dryRun) "Dry run mode: ON (no SMS will be sent)" else "Dry run mode: OFF",
@@ -299,7 +336,7 @@ fun SettingsScreen(
                             minDelay.isNotBlank() &&
                             maxDelay.isNotBlank()
                         if (complete) {
-                            LogManager.addLog("Test config: complete; dry_run=$dryRun; target configured")
+                            LogManager.addLog("Test config: complete; profile_enabled=$profileEnabled; dry_run=$dryRun; target configured")
                         } else {
                             LogManager.addLog("Test config: incomplete")
                         }

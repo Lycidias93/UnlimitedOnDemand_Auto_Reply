@@ -53,6 +53,7 @@ private const val DEFAULT_TITLE_MATCH = "10118"
 private const val DEFAULT_BODY_MATCH = "Vollspeed"
 private const val DEFAULT_TARGET_NUMBER = "10118"
 private const val DEFAULT_ANSWER = "2"
+private const val DEFAULT_PROFILE_ENABLED = true
 private const val DEFAULT_DRY_RUN = false
 private const val DEFAULT_COOLDOWN_MS = 15L * 60L * 1000L
 private const val DEFAULT_DEDUPE_WINDOW_MS = 10L * 60L * 1000L
@@ -79,7 +80,13 @@ class MyNotificationListenerService : NotificationListenerService() {
         val answer = readSetting(prefs, "answer", DEFAULT_ANSWER)
         val minDelay = readDelaySetting(prefs, "min_delay", DEFAULT_MIN_DELAY_SECONDS)
         val maxDelay = readDelaySetting(prefs, "max_delay", DEFAULT_MAX_DELAY_SECONDS)
+        val profileEnabled = readBooleanSetting(prefs, "profile_enabled", DEFAULT_PROFILE_ENABLED)
         val dryRun = readBooleanSetting(prefs, "dry_run", DEFAULT_DRY_RUN)
+
+        if (!profileEnabled) {
+            LogManager.addLog("Skipped: profile disabled")
+            return
+        }
 
         if (!isConfigComplete(smsApp, titleMatch, bodyMatch, number, answer)) {
             LogManager.addLog("Skipped: configuration incomplete")
