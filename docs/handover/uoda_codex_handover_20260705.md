@@ -69,7 +69,8 @@ Known installed APK hashes:
 
 ### Attempt v1
 
-Failed before the test because `settings get secure enabled_notification_listeners` ran as the Termux UID. The command requires root for this use. No preferences were changed.
+Failed before the test because `settings get secure enabled_notification_listeners`
+ran as the Termux UID. The command requires root for this use. No preferences were changed.
 
 ### Attempt v2
 
@@ -78,27 +79,38 @@ Failed before the test because `settings get secure enabled_notification_listene
 - The listener did not produce the Dry-run match marker.
 - Settings were restored successfully.
 
-Most likely explanation: the notification package seen by `NotificationListenerService` was not the configured `com.termux`. A visible notification alone does not prove its `StatusBarNotification.packageName`.
+Most likely explanation: the notification package seen by
+`NotificationListenerService` was not the configured `com.termux`. A visible
+notification alone does not prove its `StatusBarNotification.packageName`.
 
 ### Prepared external attempt v3
 
 - File: `pixel_local__uoda_v05_notification_dryrun_v56_workflow_v3.sh`
 - SHA-256: `311eaa5e7a258ddc608a075ba4484783cbea60169531a5faba2b11c9d2325db6`
 
-The script is intended to discover the posting package with `dumpsys notification`, temporarily configure it, clear blocking runtime state, post a match, verify the marker, and restore settings and state with their original owner/mode.
+The script is intended to discover the posting package with
+`dumpsys notification`, temporarily configure it, clear blocking runtime state,
+post a match, verify the marker, and restore settings and state with their
+original owner/mode.
 
 ## Codex continuation strategy
 
 Prefer an app-internal test path before another root-owned preference rewrite:
 
-1. Add a button that posts an app-owned notification containing the configured title/body match values.
-2. Permit a package-match override only for an app-owned notification carrying the private internal-test marker.
-3. Require profile enabled, listener enabled, notification permission, complete configuration, and Dry-run ON before posting the test.
-4. Keep title/body matching, dedupe-state recording, and the normal Dry-run outcome in the real listener path.
+1. Add a button that posts an app-owned notification containing the configured
+   title/body match values.
+2. Permit a package-match override only for an app-owned notification carrying
+   the private internal-test marker.
+3. Require profile enabled, listener enabled, notification permission, complete
+   configuration, and Dry-run ON before posting the test.
+4. Keep title/body matching, dedupe-state recording, and the normal Dry-run
+   outcome in the real listener path.
 5. Log match booleans only; never log raw notification content.
-6. Add unit tests for package, title, body, case-insensitive matching, and the internal package override.
+6. Add unit tests for package, title, body, case-insensitive matching, and the
+   internal package override.
 
-This proves the installed listener and matching pipeline without sending an SMS. It does not replace a later real-provider Dry-run observation.
+This proves the installed listener and matching pipeline without sending an SMS.
+It does not replace a later real-provider Dry-run observation.
 
 ## v0.5 acceptance criteria
 
@@ -108,22 +120,30 @@ This proves the installed listener and matching pipeline without sending an SMS.
 - No SMS is sent.
 - Runtime state records the notification dedupe key.
 - Runtime state does not update `last_send_at`.
-- A later provider notification must independently pass Dry-run before any live SMS decision.
+- A later provider notification must independently pass Dry-run before any live
+  SMS decision.
 
-## Codex local implementation status
+## Codex implementation status
 
 Implemented and validated locally on 2026-07-05:
 
 - Added `Post safe dry-run test notification`.
-- Posting is blocked unless profile, Dry-run, listener, permission, and configuration preflight pass.
-- Only an app-owned notification carrying the private marker may bypass the configured package check.
-- Title and body matching still run normally.
+- The button is available only while the profile and Dry-run are enabled.
+- Posting is also blocked in code when the profile, Dry-run, listener,
+  notification permission, or configuration preflight fails.
+- The app-owned notification carries a private marker.
+- Only a notification posted by UODA itself with that marker may bypass the
+  configured package check.
+- Title and body checks still run normally.
 - The listener independently blocks the internal test if Dry-run is disabled.
 - Match diagnostics contain booleans only, never raw notification content.
+- Internal tests get unique dedupe identities and do not update `last_send_at`.
 - Fresh-install Dry-run default changed to ON.
 - APK metadata updated to `versionCode=5`, `versionName=v0.5-alpha`.
-- Added four notification-matching unit tests.
-- Removed the obsolete manifest package attribute and deprecated Compose divider usage.
+- Added four unit tests for normal, rejected-package, partial internal, and
+  successful internal matching.
+- Removed the obsolete manifest package attribute and deprecated Compose
+  divider usage.
 
 Validation:
 
@@ -135,7 +155,10 @@ Debug APK SHA-256:
 326A48DB8A38B1870913FB7D3238EDFF86341D03FD7C8B9DAE703D306041776C
 ```
 
-The v0.5 code changes are local until published separately. This build has not been installed on Pixel and the internal marker has not been observed on-device. No ADB device was connected to the Codex Windows host during validation.
+This build has not yet been installed on Pixel and the internal notification
+marker has not yet been observed on-device. No ADB device was connected to the
+Codex Windows host during validation. The code changes are local until they are
+published to the working branch.
 
 ## Pixel/Termux handoff contract
 
@@ -156,7 +179,9 @@ CGFLOW_ROUTE_CLASS=none
 CGFLOW_SECRET_CLASS=none
 ```
 
-Do not use raw `latest.log` as a multitasking-safe source of truth. A valid handoff must include its run token, lane, scope, host, route class, secret class, expected marker, and proof that a forbidden foreign marker is absent.
+Do not use raw `latest.log` as a multitasking-safe source of truth. A valid
+handoff must include its run token, lane, scope, host, route class, secret class,
+expected marker, and proof that a forbidden foreign marker is absent.
 
 Expected guard evidence:
 
@@ -169,7 +194,9 @@ RESULT: CGAUTOTAIL_GUARD_V5_DONE rc=0 tail_rc=0 verify=PASS
 
 ## Operational gotchas
 
-- If `pm install -r` reports `Failed transaction (2147483646)`, force-stop the app, recopy the APK to `/data/local/tmp`, and retry the root install.
+- If `pm install -r` reports `Failed transaction (2147483646)`, force-stop the
+  app, recopy the APK to `/data/local/tmp`, and retry the root install.
 - Root-owned preference backups/restores must preserve owner and mode.
 - Update APK version metadata before a public release.
-- Treat the internal notification test as pipeline validation, not as proof of the provider notification package or content shape.
+- Treat the internal notification test as pipeline validation, not as proof of
+  the provider notification package or content shape.

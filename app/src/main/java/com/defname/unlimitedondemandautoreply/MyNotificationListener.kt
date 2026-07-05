@@ -54,10 +54,41 @@ private const val DEFAULT_BODY_MATCH = "Vollspeed"
 private const val DEFAULT_TARGET_NUMBER = "10118"
 private const val DEFAULT_ANSWER = "2"
 private const val DEFAULT_PROFILE_ENABLED = true
-private const val DEFAULT_DRY_RUN = false
+private const val DEFAULT_DRY_RUN = true
 private const val DEFAULT_COOLDOWN_MS = 15L * 60L * 1000L
 private const val DEFAULT_DEDUPE_WINDOW_MS = 10L * 60L * 1000L
 private const val DEFAULT_DAILY_LIMIT = 3
+
+internal data class NotificationMatchResult(
+    val packageMatch: Boolean,
+    val titleMatch: Boolean,
+    val bodyMatch: Boolean
+) {
+    val matched: Boolean
+        get() = packageMatch && titleMatch && bodyMatch
+}
+
+internal fun evaluateNotificationMatch(
+    sourcePackage: String,
+    configuredPackage: String,
+    title: String,
+    configuredTitle: String,
+    body: String,
+    configuredBody: String,
+    allowInternalPackageOverride: Boolean = false
+): NotificationMatchResult {
+    return NotificationMatchResult(
+        packageMatch = allowInternalPackageOverride || sourcePackage == configuredPackage,
+        titleMatch = normalizeNotificationValue(title)
+            .contains(normalizeNotificationValue(configuredTitle)),
+        bodyMatch = normalizeNotificationValue(body)
+            .contains(normalizeNotificationValue(configuredBody))
+    )
+}
+
+internal fun normalizeNotificationValue(value: String): String {
+    return value.trim().lowercase(Locale.ROOT)
+}
 
 /**
  * NotificationService that runs in the background and listens for incoming notifications.
@@ -82,6 +113,9 @@ class MyNotificationListenerService : NotificationListenerService() {
         val maxDelay = readDelaySetting(prefs, "max_delay", DEFAULT_MAX_DELAY_SECONDS)
         val profileEnabled = readBooleanSetting(prefs, "profile_enabled", DEFAULT_PROFILE_ENABLED)
         val dryRun = readBooleanSetting(prefs, "dry_run", DEFAULT_DRY_RUN)
+        val internalDryRunTest =
+            packageName == applicationContext.packageName &&
+                extras.getBoolean(InternalDryRunTestContract.EXTRA_INTERNAL_TEST, false)
 
         if (!profileEnabled) {
             LogManager.addLog("Skipped: profile disabled")
@@ -94,7 +128,34 @@ class MyNotificationListenerService : NotificationListenerService() {
             return
         }
 
-        if (!matchesConfiguredNotification(packageName, smsApp, title, titleMatch, text, bodyMatch)) {
+        if (internalDryRunTest && !dryRun) {
+            LogManager.addLog("Internal test blocked: dry run disabled")
+            return
+        }
+
+        val matchResult = evaluateNotificationMatch(
+            sourcePackage = packageName,
+            configuredPackage = smsApp,
+            title = title,
+            configuredTitle = titleMatch,
+            body = text,
+            configuredBody = bodyMatch,
+            allowInternalPackageOverride = internalDryRunTest
+        )
+
+        if (internalDryRunTest) {
+            LogManager.addLog(
+                "Internal test evaluated: package_match=${matchResult.packageMatch}; " +
+                    "title_match=${matchResult.titleMatch}; body_match=${matchResult.bodyMatch}"
+            )
+        } else if (matchResult.packageMatch && !matchResult.matched) {
+            LogManager.addLog(
+                "Configured-app notification ignored: " +
+                    "title_match=${matchResult.titleMatch}; body_match=${matchResult.bodyMatch}"
+            )
+        }
+
+        if (!matchResult.matched) {
             Log.d("NotifListener", "Notification ignored: no configured match")
             return
         }
@@ -102,7 +163,13 @@ class MyNotificationListenerService : NotificationListenerService() {
         val now = System.currentTimeMillis()
         val statePrefs = getSharedPreferences(STATE_PREFS, MODE_PRIVATE)
         val notificationKey = stableHash(
-            listOf(packageName, normalizeForMatch(title), normalizeForMatch(text), sbn.id.toString())
+            listOf(
+                packageName,
+                normalizeNotificationValue(title),
+                normalizeNotificationValue(text),
+                sbn.id.toString(),
+                if (internalDryRunTest) sbn.postTime.toString() else ""
+            )
                 .joinToString("|")
         )
 
@@ -204,25 +271,6 @@ class MyNotificationListenerService : NotificationListenerService() {
             answer.isNotBlank()
     }
 
-    private fun matchesConfiguredNotification(
-        packageName: String,
-        smsApp: String,
-        title: String,
-        titleMatch: String,
-        text: String,
-        bodyMatch: String
-    ): Boolean {
-        if (packageName != smsApp) return false
-
-        val normalizedTitle = normalizeForMatch(title)
-        val normalizedTitleMatch = normalizeForMatch(titleMatch)
-        val normalizedText = normalizeForMatch(text)
-        val normalizedBodyMatch = normalizeForMatch(bodyMatch)
-
-        return normalizedTitle.contains(normalizedTitleMatch) &&
-            normalizedText.contains(normalizedBodyMatch)
-    }
-
     private fun calculateDelayMillis(minDelaySeconds: Long, maxDelaySeconds: Long): Long {
         val safeMinSeconds = minDelaySeconds.coerceAtLeast(0L)
         val safeMaxSeconds = maxDelaySeconds.coerceAtLeast(safeMinSeconds + 1L)
@@ -276,10 +324,6 @@ class MyNotificationListenerService : NotificationListenerService() {
 
     private fun dateKey(timestamp: Long): String {
         return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(timestamp))
-    }
-
-    private fun normalizeForMatch(value: String): String {
-        return value.trim().lowercase(Locale.ROOT)
     }
 
     private fun sanitizePhoneNumber(value: String): String {

@@ -19,6 +19,8 @@
 
 package com.defname.unlimitedondemandautoreply
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -46,7 +48,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -66,6 +68,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import com.defname.unlimitedondemandautoreply.ui.theme.SmsTestAppTheme
@@ -141,6 +145,77 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
     }
 
+    fun postInternalDryRunTestNotification() {
+        LogManager.init(applicationContext)
+
+        val profileEnabled =
+            getSetting("profile_enabled").toBooleanStrictOrNull() ?: true
+        val dryRun = getSetting("dry_run").toBooleanStrictOrNull() ?: true
+        val titleMatch = getSetting("title_match").trim()
+        val bodyMatch = getSetting("body_match").trim()
+        val configComplete = getSetting("sms_app").isNotBlank() &&
+            titleMatch.isNotBlank() &&
+            bodyMatch.isNotBlank() &&
+            getSetting("number").isNotBlank() &&
+            getSetting("answer").isNotBlank()
+
+        when {
+            !profileEnabled -> {
+                LogManager.addLog("Internal test blocked: profile disabled")
+                return
+            }
+            !dryRun -> {
+                LogManager.addLog("Internal test blocked: dry run disabled")
+                return
+            }
+            !configComplete -> {
+                LogManager.addLog("Internal test blocked: configuration incomplete")
+                return
+            }
+            !checkNotificationServiceEnabled() -> {
+                LogManager.addLog("Internal test blocked: notification listener disabled")
+                return
+            }
+            !checkNotificationPermission() -> {
+                LogManager.addLog("Internal test blocked: notification permission missing")
+                return
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                InternalDryRunTestContract.CHANNEL_ID,
+                InternalDryRunTestContract.CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "App-owned notifications for safe listener testing"
+            }
+            getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(channel)
+        }
+
+        val extras = Bundle().apply {
+            putBoolean(InternalDryRunTestContract.EXTRA_INTERNAL_TEST, true)
+        }
+        val notification = NotificationCompat.Builder(
+            this,
+            InternalDryRunTestContract.CHANNEL_ID
+        )
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(titleMatch)
+            .setContentText(bodyMatch)
+            .setExtras(extras)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .build()
+
+        NotificationManagerCompat.from(this).notify(
+            InternalDryRunTestContract.NOTIFICATION_ID,
+            notification
+        )
+        LogManager.addLog("Internal dry-run notification posted")
+    }
+
     fun saveSetting(key: String, value: String) {
         val prefs = getSharedPreferences("settings", MODE_PRIVATE)
         prefs.edit() { putString(key, value) }
@@ -163,7 +238,7 @@ class MainActivity : ComponentActivity() {
             "max_delay" -> "30"
             "profile_name" -> "O2/Freenet Vollspeed"
             "profile_enabled" -> "true"
-            "dry_run" -> "false"
+            "dry_run" -> "true"
             else -> ""
         }
     }
@@ -179,7 +254,8 @@ fun SettingsScreen(
     checkNotificationPermission: () -> Boolean,
     onRequestNotificationService: () -> Unit,
     checkNotificationServiceEnabled: () -> Boolean,
-    getDefaultSmsPackage: () -> String?
+    getDefaultSmsPackage: () -> String?,
+    onPostInternalDryRunTest: () -> Unit
 ) {
     var smsPermissionGranted by remember { mutableStateOf(checkSMSPermissions()) }
     var notificationPermissionGranted by remember { mutableStateOf(checkNotificationPermission()) }
@@ -194,7 +270,7 @@ fun SettingsScreen(
     var maxDelay by remember { mutableStateOf(onGetSetting("max_delay")) }
     var profileName by remember { mutableStateOf(onGetSetting("profile_name")) }
     var profileEnabled by remember { mutableStateOf(onGetSetting("profile_enabled").toBooleanStrictOrNull() ?: true) }
-    var dryRun by remember { mutableStateOf(onGetSetting("dry_run").toBooleanStrictOrNull() ?: false) }
+    var dryRun by remember { mutableStateOf(onGetSetting("dry_run").toBooleanStrictOrNull() ?: true) }
 
     // Aktualisieren Sie den Status, wenn die Composable-Funktion neu zusammengesetzt wird (z. B. nach onResume)
     LaunchedEffect(Unit) {
@@ -211,7 +287,7 @@ fun SettingsScreen(
         maxDelay = onGetSetting("max_delay")
         profileName = onGetSetting("profile_name")
         profileEnabled = onGetSetting("profile_enabled").toBooleanStrictOrNull() ?: true
-        dryRun = onGetSetting("dry_run").toBooleanStrictOrNull() ?: false
+        dryRun = onGetSetting("dry_run").toBooleanStrictOrNull() ?: true
     }
 
 
@@ -355,6 +431,23 @@ fun SettingsScreen(
                     Text("Clear logs")
                 }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            androidx.compose.material3.Button(
+                onClick = onPostInternalDryRunTest,
+                enabled = profileEnabled && dryRun,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Post safe dry-run test notification")
+            }
+
+            Text(
+                text = "Uses the real notification listener and never sends an SMS.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray,
+                modifier = Modifier.padding(top = 4.dp)
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -500,7 +593,8 @@ fun MainScreen(activity: MainActivity) {
                 checkNotificationPermission = activity::checkNotificationPermission,
                 onRequestNotificationService = activity::requestNotificationService,
                 checkNotificationServiceEnabled = activity::checkNotificationServiceEnabled,
-                getDefaultSmsPackage = { Telephony.Sms.getDefaultSmsPackage(activity) }
+                getDefaultSmsPackage = { Telephony.Sms.getDefaultSmsPackage(activity) },
+                onPostInternalDryRunTest = activity::postInternalDryRunTestNotification
             ) // Deine bisherige UI
             1 -> LogScreen()      // Die neue Log-Ansicht
         }
@@ -529,8 +623,7 @@ fun LogScreen() {
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
-            Divider(color = Color.LightGray, thickness = 0.5.dp)
+            HorizontalDivider(color = Color.LightGray, thickness = 0.5.dp)
         }
     }
 }
-
