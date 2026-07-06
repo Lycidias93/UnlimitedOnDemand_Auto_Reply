@@ -7,7 +7,8 @@ Continue safety-first development of UnlimitedOnDemand Auto Reply (UODA).
 - Repository: `Lycidias93/UnlimitedOnDemand_Auto_Reply`
 - Working branch: `v0.2-safety-runtime`
 - Upstream: `defname/UnlimitedOnDemand_Auto_Reply`
-- Current work item: v0.5 safe notification runtime test
+- Current work item: install and validate v0.5 safe notification runtime test on Pixel
+- Codex repo notes: `AGENTS.md`
 
 ## Non-negotiable safety boundary
 
@@ -157,8 +158,18 @@ Debug APK SHA-256:
 
 This build has not yet been installed on Pixel and the internal notification
 marker has not yet been observed on-device. No ADB device was connected to the
-Codex Windows host during validation. The code changes are local until they are
-published to the working branch.
+Codex Windows host during validation.
+
+Publication status:
+
+- Published commit: `6c376cf`
+- Commit message: `feat: add safe internal dry-run notification test`
+- Branch: `v0.2-safety-runtime`
+
+Codex workspace adaptation:
+
+- Added root `AGENTS.md` so future Codex sessions can take over without chat scrollback.
+- Added `.gitignore` for Android/Gradle/Kotlin local build output and signing material.
 
 ## Pixel/Termux handoff contract
 
