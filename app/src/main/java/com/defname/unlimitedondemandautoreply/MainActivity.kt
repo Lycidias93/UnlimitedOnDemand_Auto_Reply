@@ -90,6 +90,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         LogManager.init(applicationContext)
+        RuntimeStatusManager.markAppOpened(applicationContext)
 
         setContent {
             SmsTestAppTheme {
@@ -143,6 +144,10 @@ class MainActivity : ComponentActivity() {
 
     fun requestNotificationService() {
         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+    }
+
+    fun copyRuntimeStatus() {
+        RuntimeStatusManager.copyStatusToClipboard(applicationContext)
     }
 
     fun postInternalDryRunTestNotification() {
@@ -255,7 +260,8 @@ fun SettingsScreen(
     onRequestNotificationService: () -> Unit,
     checkNotificationServiceEnabled: () -> Boolean,
     getDefaultSmsPackage: () -> String?,
-    onPostInternalDryRunTest: () -> Unit
+    onPostInternalDryRunTest: () -> Unit,
+    onCopyRuntimeStatus: () -> Unit
 ) {
     var smsPermissionGranted by remember { mutableStateOf(checkSMSPermissions()) }
     var notificationPermissionGranted by remember { mutableStateOf(checkNotificationPermission()) }
@@ -272,12 +278,10 @@ fun SettingsScreen(
     var profileEnabled by remember { mutableStateOf(onGetSetting("profile_enabled").toBooleanStrictOrNull() ?: true) }
     var dryRun by remember { mutableStateOf(onGetSetting("dry_run").toBooleanStrictOrNull() ?: true) }
 
-    // Aktualisieren Sie den Status, wenn die Composable-Funktion neu zusammengesetzt wird (z. B. nach onResume)
     LaunchedEffect(Unit) {
         smsPermissionGranted = checkSMSPermissions()
         notificationPermissionGranted = checkNotificationPermission()
         notificationServiceEnabled = checkNotificationServiceEnabled()
-        // Laden Sie die Einstellungen neu, falls sie extern geändert wurden
         smsAppPackage = onGetSetting("sms_app")
         titleMatch = onGetSetting("title_match")
         bodyMatch = onGetSetting("body_match")
@@ -290,7 +294,6 @@ fun SettingsScreen(
         dryRun = onGetSetting("dry_run").toBooleanStrictOrNull() ?: true
     }
 
-
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -301,7 +304,6 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            // SMS Permission Status
             Text(
                 text = if (smsPermissionGranted) stringResource(R.string.sms_permission_granted)
                 else stringResource(R.string.sms_permission_denied),
@@ -319,7 +321,6 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Notification Permission Status
             Text(
                 text = if (notificationPermissionGranted) stringResource(R.string.notification_permission_granted)
                 else stringResource(R.string.notification_permission_denied),
@@ -337,7 +338,6 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Notification Listener Status
             Text(
                 text = if (notificationServiceEnabled) stringResource(R.string.notification_listener_active)
                 else stringResource(R.string.notification_listener_inactive),
@@ -442,6 +442,15 @@ fun SettingsScreen(
                 Text("Post safe dry-run test notification")
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            androidx.compose.material3.Button(
+                onClick = onCopyRuntimeStatus,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Copy runtime status")
+            }
+
             Text(
                 text = "Uses the real notification listener and never sends an SMS.",
                 style = MaterialTheme.typography.bodySmall,
@@ -451,7 +460,6 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Input: App Package
             OutlinedTextField(
                 value = smsAppPackage,
                 onValueChange = {
@@ -471,10 +479,8 @@ fun SettingsScreen(
                 Text(stringResource(R.string.button_sms_app_caption))
             }
 
-
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Input: Title to match
             OutlinedTextField(
                 value = titleMatch,
                 onValueChange = {
@@ -488,7 +494,6 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Input: Content to match
             OutlinedTextField(
                 value = bodyMatch,
                 onValueChange = {
@@ -502,7 +507,6 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Input: Number
             OutlinedTextField(
                 value = number,
                 onValueChange = {
@@ -517,7 +521,6 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Input: Answer
             OutlinedTextField(
                 value = answer,
                 onValueChange = {
@@ -531,7 +534,11 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Text(stringResource(R.string.edit_delay_caption), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 16.dp))
+            Text(
+                stringResource(R.string.edit_delay_caption),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(top = 16.dp)
+            )
             Row(Modifier.fillMaxWidth()) {
                 OutlinedTextField(
                     value = minDelay,
@@ -570,7 +577,6 @@ fun MainScreen(activity: MainActivity) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            // Nutzt Safe Drawing Insets, um Notch/Kamera auszuweichen
             .padding(WindowInsets.safeDrawing.asPaddingValues())
     ) {
         TabRow(selectedTabIndex = selectedTab) {
@@ -594,9 +600,10 @@ fun MainScreen(activity: MainActivity) {
                 onRequestNotificationService = activity::requestNotificationService,
                 checkNotificationServiceEnabled = activity::checkNotificationServiceEnabled,
                 getDefaultSmsPackage = { Telephony.Sms.getDefaultSmsPackage(activity) },
-                onPostInternalDryRunTest = activity::postInternalDryRunTestNotification
-            ) // Deine bisherige UI
-            1 -> LogScreen()      // Die neue Log-Ansicht
+                onPostInternalDryRunTest = activity::postInternalDryRunTestNotification,
+                onCopyRuntimeStatus = activity::copyRuntimeStatus
+            )
+            1 -> LogScreen()
         }
     }
 }
