@@ -63,5 +63,20 @@ When the app is configured and the service is running, the first outgoing SMS st
 However, you can choose to allow all future messages to be sent automatically.  
 From that point on, the app will operate without any further user interaction.
 
+### Dry-run and runtime diagnostics
+
+This fork defaults to dry-run mode for safer testing. In dry-run mode, a matching notification is evaluated through the real notification listener, but no SMS is sent.
+
+The settings screen includes a safe internal dry-run test notification and a **Copy runtime status** action. Runtime status is designed for diagnostics and records bounded, non-message-content fields such as:
+
+- whether the listener has been created and received notification callbacks;
+- the last seen notification package;
+- whether notification title/body fields were present;
+- package/title/body match results;
+- the latest decision such as `package_mismatch`, `title_mismatch`, `body_mismatch`, `dry_run_match_no_sms`, `cooldown_active`, `duplicate_notification` or `daily_limit_reached`;
+- current dry-run/profile state and bounded runtime counters.
+
+The copied status intentionally avoids copying the actual notification body, reply text or target phone number.
+
 ## License
 This project is licensed under the GNU General Public License v3.0 or later – see the [LICENSE](LICENSE) file for details.
