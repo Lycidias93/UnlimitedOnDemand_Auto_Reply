@@ -98,6 +98,7 @@ class MyNotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         LogManager.init(applicationContext)
+        RuntimeStatusManager.markNotificationCallback(applicationContext)
         val packageName = sbn.packageName.orEmpty()
         val extras = sbn.notification.extras
         val title = extras.getString("android.title").orEmpty()
@@ -118,17 +119,56 @@ class MyNotificationListenerService : NotificationListenerService() {
                 extras.getBoolean(InternalDryRunTestContract.EXTRA_INTERNAL_TEST, false)
 
         if (!profileEnabled) {
+            RuntimeStatusManager.recordNotificationEvaluation(
+                context = applicationContext,
+                sourcePackage = packageName,
+                configuredPackage = smsApp,
+                titlePresent = title.isNotBlank(),
+                bodyPresent = text.isNotBlank(),
+                profileEnabled = profileEnabled,
+                dryRun = dryRun,
+                packageMatch = null,
+                titleMatch = null,
+                bodyMatch = null,
+                decision = "profile_disabled"
+            )
             LogManager.addLog("Skipped: profile disabled")
             return
         }
 
         if (!isConfigComplete(smsApp, titleMatch, bodyMatch, number, answer)) {
+            RuntimeStatusManager.recordNotificationEvaluation(
+                context = applicationContext,
+                sourcePackage = packageName,
+                configuredPackage = smsApp,
+                titlePresent = title.isNotBlank(),
+                bodyPresent = text.isNotBlank(),
+                profileEnabled = profileEnabled,
+                dryRun = dryRun,
+                packageMatch = null,
+                titleMatch = null,
+                bodyMatch = null,
+                decision = "configuration_incomplete"
+            )
             LogManager.addLog("Skipped: configuration incomplete")
             Log.d("NotifListener", "Skipped notification: configuration incomplete")
             return
         }
 
         if (internalDryRunTest && !dryRun) {
+            RuntimeStatusManager.recordNotificationEvaluation(
+                context = applicationContext,
+                sourcePackage = packageName,
+                configuredPackage = smsApp,
+                titlePresent = title.isNotBlank(),
+                bodyPresent = text.isNotBlank(),
+                profileEnabled = profileEnabled,
+                dryRun = dryRun,
+                packageMatch = true,
+                titleMatch = null,
+                bodyMatch = null,
+                decision = "internal_test_dry_run_disabled"
+            )
             LogManager.addLog("Internal test blocked: dry run disabled")
             return
         }
@@ -141,6 +181,27 @@ class MyNotificationListenerService : NotificationListenerService() {
             body = text,
             configuredBody = bodyMatch,
             allowInternalPackageOverride = internalDryRunTest
+        )
+
+        val matchDecision = when {
+            matchResult.matched -> "matched"
+            !matchResult.packageMatch -> "package_mismatch"
+            !matchResult.titleMatch -> "title_mismatch"
+            !matchResult.bodyMatch -> "body_mismatch"
+            else -> "no_match"
+        }
+        RuntimeStatusManager.recordNotificationEvaluation(
+            context = applicationContext,
+            sourcePackage = packageName,
+            configuredPackage = smsApp,
+            titlePresent = title.isNotBlank(),
+            bodyPresent = text.isNotBlank(),
+            profileEnabled = profileEnabled,
+            dryRun = dryRun,
+            packageMatch = matchResult.packageMatch,
+            titleMatch = matchResult.titleMatch,
+            bodyMatch = matchResult.bodyMatch,
+            decision = matchDecision
         )
 
         if (internalDryRunTest) {
@@ -174,22 +235,26 @@ class MyNotificationListenerService : NotificationListenerService() {
         )
 
         if (isDuplicate(statePrefs, notificationKey, now)) {
+            RuntimeStatusManager.recordDecision(applicationContext, "duplicate_notification")
             LogManager.addLog("Skipped: duplicate notification within dedupe window")
             return
         }
 
         if (isInCooldown(statePrefs, now)) {
+            RuntimeStatusManager.recordDecision(applicationContext, "cooldown_active")
             LogManager.addLog("Skipped: cooldown active")
             return
         }
 
         if (dailyLimitReached(statePrefs, now)) {
+            RuntimeStatusManager.recordDecision(applicationContext, "daily_limit_reached")
             LogManager.addLog("Skipped: daily limit reached")
             return
         }
 
         val sanitizedPhone = sanitizePhoneNumber(number)
         if (sanitizedPhone.isBlank()) {
+            RuntimeStatusManager.recordDecision(applicationContext, "target_number_invalid")
             LogManager.addLog("Skipped: target number invalid")
             return
         }
@@ -202,12 +267,14 @@ class MyNotificationListenerService : NotificationListenerService() {
                 .putString("last_notification_key", notificationKey)
                 .putLong("last_notification_at", now)
                 .apply()
+            RuntimeStatusManager.recordDecision(applicationContext, "dry_run_match_no_sms")
             LogManager.addLog("Dry run: notification matched; SMS not sent.")
             showNotification("Dry run match", "Configured notification matched; SMS not sent.")
             return
         }
 
         markScheduled(statePrefs, notificationKey, now)
+        RuntimeStatusManager.recordDecision(applicationContext, "sms_scheduled")
         LogManager.addLog("Notification matched. SMS scheduled in ${delay / 1000}s.")
 
         Handler(Looper.getMainLooper()).postDelayed({
@@ -249,8 +316,11 @@ class MyNotificationListenerService : NotificationListenerService() {
     private fun notificationText(extras: android.os.Bundle): String {
         val text = extras.getCharSequence("android.text")?.toString().orEmpty()
         val bigText = extras.getCharSequence("android.bigText")?.toString().orEmpty()
+        val textLines = extras.getCharSequenceArray("android.textLines")
+            ?.mapNotNull { it?.toString() }
+            .orEmpty()
 
-        return listOf(text, bigText)
+        return (listOf(text, bigText) + textLines)
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
@@ -410,11 +480,13 @@ class MyNotificationListenerService : NotificationListenerService() {
 
             smsManager.sendTextMessage(number, null, msg, sentIntent, null)
             Log.d("NotifListener", "SMS process started")
+            RuntimeStatusManager.recordDecision(applicationContext, "sms_send_requested")
             LogManager.addLog("SMS send requested")
 
         } catch (e: Exception) {
             Log.e("NotifListener", "Error sending SMS: ${e.message}")
             Toast.makeText(this, "SMS Error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            RuntimeStatusManager.recordDecision(applicationContext, "sms_error")
             LogManager.addLog("SMS Error: ${e.localizedMessage}")
         }
     }
@@ -432,6 +504,7 @@ class MyNotificationListenerService : NotificationListenerService() {
             }
 
             Log.d("NotifListener", "Receiver Result: $code")
+            RuntimeStatusManager.recordDecision(applicationContext, message)
             LogManager.addLog(message)
             showNotification("SMS Status", message)
         }
@@ -439,6 +512,8 @@ class MyNotificationListenerService : NotificationListenerService() {
 
     override fun onCreate() {
         super.onCreate()
+        LogManager.init(applicationContext)
+        RuntimeStatusManager.markListenerCreated(applicationContext)
 
         ContextCompat.registerReceiver(
             this,
@@ -450,6 +525,7 @@ class MyNotificationListenerService : NotificationListenerService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        RuntimeStatusManager.markListenerDestroyed(applicationContext)
         unregisterReceiver(smsStatusReceiver)
     }
 }
