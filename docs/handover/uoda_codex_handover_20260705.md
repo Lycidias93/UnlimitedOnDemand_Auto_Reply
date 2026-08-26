@@ -1,213 +1,349 @@
-# UODA Codex Handover — 2026-07-05
+# UODA / Pixel Handover for Codex — 2026-07-05
 
-## Mission
+## Purpose
 
-Continue safety-first development of UnlimitedOnDemand Auto Reply (UODA).
+Continue the UODA Android app work in Codex without relying on chat scrollback.
 
-- Repository: `Lycidias93/UnlimitedOnDemand_Auto_Reply`
-- Working branch: `v0.2-safety-runtime`
-- Upstream: `defname/UnlimitedOnDemand_Auto_Reply`
-- Current work item: install and validate v0.5 safe notification runtime test on Pixel
-- Codex repo notes: `AGENTS.md`
+Primary working repo for the app:
 
-## Non-negotiable safety boundary
+- `Lycidias93/UnlimitedOnDemand_Auto_Reply`
+- Branch: `v0.2-safety-runtime`
+- Upstream/original: `defname/UnlimitedOnDemand_Auto_Reply`
 
-Do not send a real SMS during v0.5 development or validation.
+Workflow/tooling SoT for Pixel/Termux handoffs:
 
-- Keep `dry_run=true`.
-- Never switch Dry-run off automatically.
-- Do not modify the configured target number or reply text unless the user explicitly asks.
-- A live test requires a separate, explicit user decision after a real provider notification has matched in Dry-run.
-- Before any live test, verify target `10118`, reply `2`, provider match, cooldown, dedupe, daily limit, and the rollback path back to Dry-run.
+- `Lycidias93/heimnetz-geraete`
+- Branch: `main`
+- Relevant completed PRs:
+  - `#256` — `cgautotail-guard v5.6`, token-/lane-aware Autocopy guard
+  - `#257` — old handover/project source classified as superseded / context evidence only
 
-## Known Pixel runtime state
+## Current app runtime state
+
+Installed on Pixel:
 
 - Package: `com.defname.unlimitedondemandautoreply`
-- Installed feature level: v0.4 Profile-Light
-- Reported APK metadata: `versionCode=3`, `versionName=v0.3-alpha`
-- Install method: root `pm install -r` from `/data/local/tmp`
-- Profile: `O2/Freenet Vollspeed`
-- Profile enabled: ON
-- Dry-run: ON
-- Watched package: `com.google.android.apps.messaging`
+- Installed APK branch feature level: v0.4 Profile-Light
+- `versionCode=3`
+- `versionName=v0.3-alpha`
+- Last known install time from package dump: `2026-07-03 17:57:30`
+- Install method: root `pm install -r` from `/data/local/tmp`, not Android file picker.
+
+Current UI/runtime values verified by screenshots:
+
+- Send SMS permission: granted
+- Post notification permission: granted
+- Notification listener: enabled
+- Profile name: `O2/Freenet Vollspeed`
+- Profile enabled: `ON`
+- Dry run mode: `ON (no SMS will be sent)`
+- App package to listen for: `com.google.android.apps.messaging`
 - Title match: `10118`
-- Body match: `Vollspeed`
-- Target: `10118`
-- Reply: `2`
-- Delay: 5–30 seconds
+- Body/content match: `Vollspeed`
+- Target number: `10118`
+- Text to send: `2`
+- Delay min/max: `5` / `30`
 
-Persistent runtime logs are working. The expected successful Dry-run marker is:
+Current logs in app show persistence working, including entries like:
 
-```text
-Dry run: notification matched; SMS not sent.
-```
+- `Test config: complete; profile_enabled=true; dry_run=true; target configured`
+- Older entries from before Profile-Light remain visible, proving persisted log carry-over.
 
-## Implemented safety runtime
+## Completed app changes
 
-- Incomplete-configuration hard stop
-- Case-insensitive title/body matching
-- No raw notification or SMS contents in runtime logs
-- Ten-minute dedupe window
-- Fifteen-minute cooldown
-- Daily limit of three
-- Unique SMS `PendingIntent`
-- Dry-run mode
-- Config test and log-clear controls
-- Persistent runtime logs (`runtime_logs`, up to 250 entries)
-- Profile name and profile enable switch
+### v0.2/v0.3 Safety runtime
 
-Known commits:
+Implemented earlier:
 
-- Persistent logs: `6c78943091d624e2322df3a1022764d10e7d9015`
-- v0.4 branch head observed by Pixel workflow: `fdae2c3cd16bf8befa9a3062a23fa85632caf043`
+- Config incomplete hard-stop.
+- Case-insensitive notification matching.
+- No raw SMS/notification contents in logs.
+- 10 min dedupe window.
+- 15 min cooldown.
+- Daily limit: 3.
+- Unique SMS PendingIntent.
+- Dry-run mode.
+- `Test current config` button.
+- `Clear logs` button.
+- Safe default settings.
 
-Known installed APK hashes:
+### v0.3.1 Persistent Runtime Logs
 
-- v0.3.1: `3b85b994358f75f3858e0b01426bb641a50aa4cc4ce777fa3e47bf0b2d478b30`
-- v0.4: `c9041948a41c70b08d9e558d0ece14358259af0f87dbb8d363f16e4b0ee8c987`
+Commit known from run:
 
-## v0.5 evidence so far
+- `6c78943091d624e2322df3a1022764d10e7d9015`
+- Message: `feat: persist runtime logs`
 
-### Attempt v1
+What changed:
 
-Failed before the test because `settings get secure enabled_notification_listeners`
-ran as the Termux UID. The command requires root for this use. No preferences were changed.
+- `LogManager` persists logs to SharedPreferences:
+  - `PREFS_NAME = "runtime_logs"`
+  - `PREFS_KEY_ENTRIES = "entries_json"`
+  - `MAX_LOGS = 250`
+  - `MAX_MESSAGE_LENGTH = 500`
+- `LogManager.init(applicationContext)` is called from `MainActivity` and `MyNotificationListenerService`.
+- `clearLogs()` persists the clear state.
+- Persistent logs verified by UI after app restart.
 
-### Attempt v2
+Installed APK SHA from v0.3.1 build:
 
-- Listener preflight passed.
-- A visible Termux notification was posted.
-- The listener did not produce the Dry-run match marker.
-- Settings were restored successfully.
+- `3b85b994358f75f3858e0b01426bb641a50aa4cc4ce777fa3e47bf0b2d478b30`
 
-Most likely explanation: the notification package seen by
-`NotificationListenerService` was not the configured `com.termux`. A visible
-notification alone does not prove its `StatusBarNotification.packageName`.
+### v0.4 Profile-Light
 
-### Prepared external attempt v3
+Latest known UODA branch head from CI/run:
 
-- File: `pixel_local__uoda_v05_notification_dryrun_v56_workflow_v3.sh`
-- SHA-256: `311eaa5e7a258ddc608a075ba4484783cbea60169531a5faba2b11c9d2325db6`
+- `fdae2c3cd16bf8befa9a3062a23fa85632caf043`
 
-The script is intended to discover the posting package with
-`dumpsys notification`, temporarily configure it, clear blocking runtime state,
-post a match, verify the marker, and restore settings and state with their
-original owner/mode.
+Installed APK SHA from v0.4 build:
 
-## Codex continuation strategy
+- `c9041948a41c70b08d9e558d0ece14358259af0f87dbb8d363f16e4b0ee8c987`
 
-Prefer an app-internal test path before another root-owned preference rewrite:
+What changed:
 
-1. Add a button that posts an app-owned notification containing the configured
-   title/body match values.
-2. Permit a package-match override only for an app-owned notification carrying
-   the private internal-test marker.
-3. Require profile enabled, listener enabled, notification permission, complete
-   configuration, and Dry-run ON before posting the test.
-4. Keep title/body matching, dedupe-state recording, and the normal Dry-run
-   outcome in the real listener path.
-5. Log match booleans only; never log raw notification content.
-6. Add unit tests for package, title, body, case-insensitive matching, and the
-   internal package override.
+- Profile name UI field.
+- `profile_enabled` ON/OFF switch.
+- Default profile: `O2/Freenet Vollspeed`.
+- Listener skips when profile disabled.
+- Log marker: `Skipped: profile disabled`.
+- `Test current config` now logs:
+  - `Test config: complete; profile_enabled=true; dry_run=true; target configured`
 
-This proves the installed listener and matching pipeline without sending an SMS.
-It does not replace a later real-provider Dry-run observation.
+v0.4 install had one transient Android package manager failure:
 
-## v0.5 acceptance criteria
+- `cmd: Failure calling service package: Failed transaction (2147483646)`
+- Retry via `/data/local/tmp/uoda-v04-profile-light.apk` and `pm install -r` succeeded.
+- UI verified v0.4 Profile-Light is active.
 
-- Dry-run remains ON.
-- Internal matching notification is visible.
-- Listener writes the exact Dry-run marker.
-- No SMS is sent.
-- Runtime state records the notification dedupe key.
-- Runtime state does not update `last_send_at`.
-- A later provider notification must independently pass Dry-run before any live
-  SMS decision.
+## v5.6 Pixel/Termux handoff status
 
-## Codex implementation status
+`cgautotail-guard v5.6` is complete in `heimnetz-geraete` main via PR #256 and locally installed on Pixel runtime.
 
-Implemented and validated locally on 2026-07-05:
+Runtime install/verify showed:
 
-- Added `Post safe dry-run test notification`.
-- The button is available only while the profile and Dry-run are enabled.
-- Posting is also blocked in code when the profile, Dry-run, listener,
-  notification permission, or configuration preflight fails.
-- The app-owned notification carries a private marker.
-- Only a notification posted by UODA itself with that marker may bypass the
-  configured package check.
-- Title and body checks still run normally.
-- The listener independently blocks the internal test if Dry-run is disabled.
-- Match diagnostics contain booleans only, never raw notification content.
-- Internal tests get unique dedupe identities and do not update `last_send_at`.
-- Fresh-install Dry-run default changed to ON.
-- APK metadata updated to `versionCode=5`, `versionName=v0.5-alpha`.
-- Added four unit tests for normal, rejected-package, partial internal, and
-  successful internal matching.
-- Removed the obsolete manifest package attribute and deprecated Compose
-  divider usage.
+- Runtime target: `$HOME/.local/bin/cgautotail-guard`
+- PATH symlink: `$PREFIX/bin/cgautotail-guard`
+- Help shows v5 CLI:
+  - `--guard`
+  - `--run-token`
+  - `--lane`
+  - `--scope`
+  - `--host`
+  - `--route-class`
+  - `--secret-class`
+  - `--expect-marker`
+  - optional `--forbid-marker`
+  - `--log`
+  - `--copy`
 
-Validation:
+v5.6 smoke was run with:
 
-```text
-./gradlew test assembleDebug lintDebug
-BUILD SUCCESSFUL
-Lint: 0 errors
-Debug APK SHA-256:
-326A48DB8A38B1870913FB7D3238EDFF86341D03FD7C8B9DAE703D306041776C
-```
+- Run token: `cgauto-v56-smoke-20260705_023425-11266`
+- Lane: `chat-main`
+- Scope: `repo`
+- Host: `pixel-local`
+- Route class: `none`
+- Secret class: `none`
+- Expected marker: `RESULT: CGAUTOTAIL_GUARD_V56_SMOKE_EXPECTED`
 
-This build has not yet been installed on Pixel and the internal notification
-marker has not yet been observed on-device. No ADB device was connected to the
-Codex Windows host during validation.
+Clipboard content showed the exact token/lane/scope/host/expected marker, proving the old v4 `latest.log`/wrong-session bug is covered for v5-style handoffs.
 
-Publication status:
+Important rule for Codex/Pixel work:
 
-- Published commit: `6c376cf`
-- Commit message: `feat: add safe internal dry-run notification test`
-- Branch: `v0.2-safety-runtime`
+- Do not treat raw `latest.log` as a multitasking-safe SoT.
+- Valid handoff requires:
+  - `CGFLOW_RUN_TOKEN`
+  - `CGFLOW_LANE`
+  - `CGFLOW_SCOPE`
+  - `CGFLOW_HOST`
+  - `CGFLOW_ROUTE_CLASS`
+  - `CGFLOW_SECRET_CLASS`
+  - expected result marker
+  - forbidden foreign marker absent
+- For UODA work use:
+  - lane: `chat-uoda`
+  - scope: `uoda`
+  - host: `pixel-local`
+  - route_class: `none`
+  - secret_class: `none`
 
-Codex workspace adaptation:
+## Current v0.5 work: Safe Notification Runtime Test
 
-- Added root `AGENTS.md` so future Codex sessions can take over without chat scrollback.
-- Added `.gitignore` for Android/Gradle/Kotlin local build output and signing material.
+Goal:
 
-## Pixel/Termux handoff contract
+- Keep Dry-run ON.
+- Do not send SMS.
+- Simulate or receive a matching notification.
+- Verify that the listener logs:
+  - `Dry run: notification matched; SMS not sent.`
+- Then only later consider real provider notification testing / release.
 
-Workflow source of truth:
+### v0.5 v1 result
 
-- Repository: `Lycidias93/heimnetz-geraete`
-- Branch: `main`
-- PR `#256`: `cgautotail-guard v5.6`
-- PR `#257`: older handover source is superseded/context-only
+Failed early at listener permission preflight:
 
-For UODA use:
+- Error:
+  - `java.lang.SecurityException: Permission Denial: getCurrentUser() ... requires android.permission.INTERACT_ACROSS_USERS`
+- Cause:
+  - `settings get secure enabled_notification_listeners` was run as Termux UID instead of root.
+- No prefs were changed:
+  - `settings_restore=skipped_no_backup`
 
-```text
-CGFLOW_LANE=chat-uoda
-CGFLOW_SCOPE=uoda
-CGFLOW_HOST=pixel-local
-CGFLOW_ROUTE_CLASS=none
-CGFLOW_SECRET_CLASS=none
-```
+### v0.5 v2 result
 
-Do not use raw `latest.log` as a multitasking-safe source of truth. A valid
-handoff must include its run token, lane, scope, host, route class, secret class,
-expected marker, and proof that a forbidden foreign marker is absent.
+Preflight and notification post worked, but listener did not match.
 
-Expected guard evidence:
+Observed:
 
-```text
-RESULT: CGAUTOTAIL_GUARD_V5_LOG_SELECTED ... all matches yes
-RESULT: CGAUTOTAIL_GUARD_V5_MARKER_VERIFY expected_marker_present=yes forbidden_marker_present=no
-RESULT: CGAUTOTAIL_GUARD_V5_CLIPBOARD_DONE verify=PASS
-RESULT: CGAUTOTAIL_GUARD_V5_DONE rc=0 tail_rc=0 verify=PASS
-```
+- `notification_listener_enabled=yes`
+- `notify_method=termux-notification`
+- `test_package=com.termux`
+- `notification_posted=yes`
+- Visible `Vollspeed` notification appeared on Pixel.
+- Waited 15 seconds.
+- `dryrun_match_count_after=0`
+- `dryrun_listener_match=no`
+- Result:
+  - `RESULT: UODA_V05_NOTIFICATION_DRYRUN_RUNTIME_TEST_FAILED no_dryrun_match`
+  - `RESULT: CGRUN_DONE rc=30`
 
-## Operational gotchas
+Runtime evidence after v2:
 
-- If `pm install -r` reports `Failed transaction (2147483646)`, force-stop the
-  app, recopy the APK to `/data/local/tmp`, and retry the root install.
-- Root-owned preference backups/restores must preserve owner and mode.
-- Update APK version metadata before a public release.
-- Treat the internal notification test as pipeline validation, not as proof of
-  the provider notification package or content shape.
+- Settings were restored.
+- UI still shows:
+  - `sms_app=com.google.android.apps.messaging`
+  - `profile_enabled=ON`
+  - `dry_run=ON`
+- App logs show new `Test config...` entries, but no `Dry run: notification matched; SMS not sent.` entry.
+
+Likely cause, not yet proven:
+
+- The visible Termux notification may not have package `com.termux` from NotificationListener perspective.
+- It may be `com.termux.api` or another posting package.
+- Listener currently requires exact package match before title/body match.
+
+Relevant listener behavior in current app:
+
+- Reads package name from `sbn.packageName`.
+- Reads `sms_app` from SharedPreferences.
+- Strict package check:
+  - if `packageName != smsApp`, return false.
+- Then checks normalized title contains title match and normalized text contains body match.
+
+### Prepared v0.5 v3
+
+File already created and offered:
+
+- `pixel_local__uoda_v05_notification_dryrun_v56_workflow_v3.sh`
+- SHA256:
+  - `311eaa5e7a258ddc608a075ba4484783cbea60169531a5faba2b11c9d2325db6`
+
+Intended v3 behavior:
+
+1. Post probe notification.
+2. Detect actual notification package using `dumpsys notification`.
+3. Temporarily set UODA `sms_app` to detected package.
+4. Clear/backup temporary runtime state so dedupe/cooldown cannot block.
+5. Post matching notification.
+6. Check for `Dry run: notification matched; SMS not sent.`
+7. Restore settings and runtime state.
+8. Use v5.6 guard for handoff.
+
+Do not proceed to real SMS until v3 or an equivalent real-provider dry-run proves listener matching.
+
+## Safety / no-SMS rule
+
+Dry-run must remain ON until explicit final live test decision.
+
+Do not turn off Dry-run automatically.
+
+Before any real SMS test:
+
+- Confirm target number is still `10118`.
+- Confirm answer text is `2`.
+- Confirm provider notification really matches.
+- Confirm cooldown/dedupe/daily-limit state.
+- Confirm user explicitly wants to send a real SMS.
+- Keep a rollback path to restore Dry-run ON immediately.
+
+## Known gotchas
+
+### Android package manager
+
+If `pm install -r` fails with:
+
+- `cmd: Failure calling service package: Failed transaction (2147483646)`
+
+Retry may work after:
+
+- app force-stop
+- recopy APK to `/data/local/tmp`
+- `su -c "pm install -r /data/local/tmp/<apk>"`
+
+### Notification listener testing
+
+Visible notification does not prove listener match.
+
+Need to verify actual `sbn.packageName` or infer from `dumpsys notification`.
+
+### Version naming
+
+Feature state is v0.4, but APK still reports:
+
+- `versionName=v0.3-alpha`
+- `versionCode=3`
+
+This is expected for now but should be fixed before any public release.
+
+### Test prefs
+
+The v0.5 notification test temporarily edits:
+
+- `/data/user/0/com.defname.unlimitedondemandautoreply/shared_prefs/settings.xml`
+- possibly `/data/user/0/com.defname.unlimitedondemandautoreply/shared_prefs/runtime_state.xml`
+
+Backups and restores must preserve owner/mode. Previous v2 UI confirmed settings were restored.
+
+## Recommended next Codex task
+
+Continue with v0.5 v3 or implement a cleaner app-side testability/debug path.
+
+Preferred direction:
+
+1. Add explicit debug logging for ignored notifications without raw content:
+   - package hash or package name? For local debug only; avoid secrets.
+   - title_match_result yes/no
+   - body_match_result yes/no
+   - package_match yes/no
+2. Add a debug-only dry-run simulation entry point inside the app, if acceptable.
+3. Or update v3 script to detect exact posting package robustly and then rerun dry-run test.
+
+Suggested acceptance criteria:
+
+- Dry-run ON.
+- Matching notification appears.
+- App logs:
+  - `Dry run: notification matched; SMS not sent.`
+- No SMS sent.
+- Runtime state records dedupe key but not `last_send_at`.
+- v5.6 handoff shows:
+  - `RESULT: CGAUTOTAIL_GUARD_V5_LOG_SELECTED ... all matches yes`
+  - `RESULT: CGAUTOTAIL_GUARD_V5_MARKER_VERIFY expected_marker_present=yes forbidden_marker_present=no`
+  - `RESULT: CGAUTOTAIL_GUARD_V5_CLIPBOARD_DONE verify=PASS`
+  - `RESULT: CGAUTOTAIL_GUARD_V5_DONE rc=0 tail_rc=0 verify=PASS`
+
+## Suggested git placement
+
+Commit this file into the UODA repo as:
+
+- `docs/handover/uoda_codex_handover_20260705.md`
+
+Suggested commit message:
+
+- `docs: add Codex handover for UODA v0.5 testing`
+
+## Current risk
+
+- App/runtime: low.
+- v0.5 notification test: low to medium, because it manipulates root-owned app prefs temporarily.
+- Real SMS: medium/high until dry-run match is proven with the actual provider notification.
