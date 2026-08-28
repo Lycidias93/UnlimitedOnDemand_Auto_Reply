@@ -91,12 +91,9 @@ cert_sha256() {
 set_gh_secret() {
   local name="$1"
   local value="$2"
-  local tmp=""
-  tmp="$(mktemp)"
-  chmod 600 "$tmp"
-  printf '%s' "$value" > "$tmp"
-  gh secret set "$name" --repo "$repo" --body-file "$tmp" >/dev/null
-  rm -f "$tmp"
+  # gh secret set reads from stdin when no --body flag is supplied. Avoid
+  # command-line secret exposure and avoid non-portable --body-file usage.
+  printf '%s' "$value" | gh secret set "$name" --repo "$repo" >/dev/null
 }
 
 need_cmd keytool
