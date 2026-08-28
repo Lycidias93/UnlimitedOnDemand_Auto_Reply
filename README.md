@@ -74,6 +74,8 @@ The settings screen includes a safe internal dry-run test notification and a **C
 - whether notification title/body fields were present;
 - package/title/body match results;
 - the latest decision such as `package_mismatch`, `title_mismatch`, `body_mismatch`, `dry_run_match_no_sms`, `cooldown_active`, `duplicate_notification` or `daily_limit_reached`;
+- the latest relevant evaluation where package matching passed, including safe internal dry-run tests;
+- the latest successful dry-run or scheduled/send decision, so later unrelated notifications do not hide a recent match;
 - current dry-run/profile state and bounded runtime counters.
 
 The copied status intentionally avoids copying the actual notification body, reply text or target phone number.
