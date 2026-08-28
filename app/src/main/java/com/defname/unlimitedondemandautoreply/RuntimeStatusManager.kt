@@ -54,10 +54,13 @@ object RuntimeStatusManager {
         decision: String
     ) {
         val now = System.currentTimeMillis()
-        prefs(context).edit()
+        val sanitizedSource = sanitizeValue(sourcePackage)
+        val sanitizedConfigured = sanitizeValue(configuredPackage)
+        val sanitizedDecision = sanitizeValue(decision)
+        val editor = prefs(context).edit()
             .putLong("last_evaluation_at", now)
-            .putString("last_seen_package", sanitizeValue(sourcePackage))
-            .putString("configured_sms_app", sanitizeValue(configuredPackage))
+            .putString("last_seen_package", sanitizedSource)
+            .putString("configured_sms_app", sanitizedConfigured)
             .putBoolean("last_title_present", titlePresent)
             .putBoolean("last_body_present", bodyPresent)
             .putBoolean("profile_enabled", profileEnabled)
@@ -65,15 +68,50 @@ object RuntimeStatusManager {
             .putString("package_match", packageMatch.toStatusString())
             .putString("title_match", titleMatch.toStatusString())
             .putString("body_match", bodyMatch.toStatusString())
-            .putString("last_decision", sanitizeValue(decision))
-            .apply()
+            .putString("last_decision", sanitizedDecision)
+
+        if (packageMatch == true || decision == "matched") {
+            editor
+                .putLong("last_relevant_evaluation_at", now)
+                .putString("last_relevant_package", sanitizedSource)
+                .putString("last_relevant_decision", sanitizedDecision)
+                .putBoolean("last_relevant_title_present", titlePresent)
+                .putBoolean("last_relevant_body_present", bodyPresent)
+                .putString("last_relevant_package_match", packageMatch.toStatusString())
+                .putString("last_relevant_title_match", titleMatch.toStatusString())
+                .putString("last_relevant_body_match", bodyMatch.toStatusString())
+        }
+
+        if (decision == "matched") {
+            editor
+                .putLong("last_match_evaluation_at", now)
+                .putString("last_match_package", sanitizedSource)
+                .putString("last_match_decision", sanitizedDecision)
+        }
+
+        editor.apply()
     }
 
     fun recordDecision(context: Context, decision: String) {
-        prefs(context).edit()
-            .putLong("last_decision_at", System.currentTimeMillis())
-            .putString("last_decision", sanitizeValue(decision))
-            .apply()
+        val now = System.currentTimeMillis()
+        val sanitizedDecision = sanitizeValue(decision)
+        val editor = prefs(context).edit()
+            .putLong("last_decision_at", now)
+            .putString("last_decision", sanitizedDecision)
+
+        if (decision in setOf("dry_run_match_no_sms", "sms_scheduled", "sms_send_requested")) {
+            editor
+                .putLong("last_success_at", now)
+                .putString("last_success_decision", sanitizedDecision)
+        }
+
+        if (decision == "dry_run_match_no_sms") {
+            editor
+                .putLong("last_dry_run_match_at", now)
+                .putString("last_dry_run_match_decision", sanitizedDecision)
+        }
+
+        editor.apply()
     }
 
     fun copyStatusToClipboard(context: Context) {
@@ -107,6 +145,21 @@ object RuntimeStatusManager {
             appendLine("body_match=${status.getString("body_match", "unknown")}")
             appendLine("last_decision=${status.getString("last_decision", "unknown")}")
             appendLine("last_decision_at=${formatStoredTimestamp(status, "last_decision_at")}")
+            appendLine("last_relevant_evaluation_at=${formatStoredTimestamp(status, "last_relevant_evaluation_at")}")
+            appendLine("last_relevant_package=${status.getString("last_relevant_package", "unknown")}")
+            appendLine("last_relevant_decision=${status.getString("last_relevant_decision", "unknown")}")
+            appendLine("last_relevant_title_present=${status.getBoolean("last_relevant_title_present", false)}")
+            appendLine("last_relevant_body_present=${status.getBoolean("last_relevant_body_present", false)}")
+            appendLine("last_relevant_package_match=${status.getString("last_relevant_package_match", "unknown")}")
+            appendLine("last_relevant_title_match=${status.getString("last_relevant_title_match", "unknown")}")
+            appendLine("last_relevant_body_match=${status.getString("last_relevant_body_match", "unknown")}")
+            appendLine("last_match_evaluation_at=${formatStoredTimestamp(status, "last_match_evaluation_at")}")
+            appendLine("last_match_package=${status.getString("last_match_package", "unknown")}")
+            appendLine("last_match_decision=${status.getString("last_match_decision", "unknown")}")
+            appendLine("last_success_at=${formatStoredTimestamp(status, "last_success_at")}")
+            appendLine("last_success_decision=${status.getString("last_success_decision", "unknown")}")
+            appendLine("last_dry_run_match_at=${formatStoredTimestamp(status, "last_dry_run_match_at")}")
+            appendLine("last_dry_run_match_decision=${status.getString("last_dry_run_match_decision", "unknown")}")
             appendLine("last_notification_at=${formatStoredTimestamp(state, "last_notification_at")}")
             appendLine("last_send_at=${formatStoredTimestamp(state, "last_send_at")}")
             appendLine("daily_limit_date=${state.getString("daily_limit_date", "")}")
