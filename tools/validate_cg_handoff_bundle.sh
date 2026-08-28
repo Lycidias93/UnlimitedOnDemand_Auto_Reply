@@ -41,6 +41,12 @@ get_field() {
   sed -n "s/^${key}=//p" "$manifest" | head -n 1
 }
 
+bundle_format_version="$(get_field bundle_format_version)"
+if [[ "$bundle_format_version" != "1" ]]; then
+  echo "FAIL: bundle_format_version_unsupported value=$bundle_format_version" >&2
+  exit 1
+fi
+
 entrypoint="$(get_field entrypoint)"
 entrypoint_mode="$(get_field entrypoint_mode)"
 if [[ "$entrypoint_mode" != "run" && "$entrypoint_mode" != "verify" ]]; then
@@ -103,4 +109,4 @@ for i in $(seq 1 "$member_count"); do
 done
 
 bundle_sha="$(sha256sum "$bundle" | awk '{print $1}')"
-echo "RESULT: UODA_CG_HANDOFF_BUNDLE_VALIDATE_DONE outcome=success bundle=$bundle bundle_sha256=$bundle_sha entrypoint=$entrypoint run_mode=$run_mode member_count=$member_count"
+echo "RESULT: UODA_CG_HANDOFF_BUNDLE_VALIDATE_DONE outcome=success bundle=$bundle bundle_sha256=$bundle_sha bundle_format_version=$bundle_format_version entrypoint=$entrypoint run_mode=$run_mode member_count=$member_count"
