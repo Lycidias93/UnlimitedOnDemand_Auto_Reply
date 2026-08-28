@@ -16,6 +16,26 @@ The private keystore and passwords must never be committed to the repository. Ke
 
 The repository ignores common Android signing material such as `*.jks`, `*.keystore`, `*.p12` and `*.pem`. Keep local keystores out of the working tree whenever possible.
 
+## Setup helper
+
+The repository includes `tools/prepare_release_signing_secrets.sh` for maintainer-side setup. Run it locally, never in ChatGPT, and never paste the generated keystore or passwords into an issue, pull request, chat or committed file.
+
+Typical first-time setup:
+
+```bash
+bash tools/prepare_release_signing_secrets.sh --generate --upload
+```
+
+The helper prompts for the store and key passwords without echoing them, creates `app/AndroidKeystore/release.jks` when requested, derives the certificate SHA-256 fingerprint, and uploads the five required GitHub Actions secrets with `gh secret set`. It prints only non-secret status fields and the public certificate fingerprint.
+
+To validate an existing local keystore without uploading secrets:
+
+```bash
+bash tools/prepare_release_signing_secrets.sh --verify
+```
+
+Use `--force` only when intentionally replacing a local keystore before any stable public release has depended on it. After a stable public APK is released, replacing the key is a package-signature migration and should be treated as a breaking install/update event.
+
 ## Local signing compatibility
 
 `app/build.gradle.kts` supports release signing through environment variables. The public-release workflow injects these values through GitHub Actions secrets and materializes the keystore only for the lifetime of the GitHub-hosted runner.
