@@ -36,6 +36,16 @@ bash tools/prepare_release_signing_secrets.sh --verify
 
 Use `--force` only when intentionally replacing a local keystore before any stable public release has depended on it. After a stable public APK is released, replacing the key is a package-signature migration and should be treated as a breaking install/update event.
 
+## Automation handoff guard
+
+Automation that wraps release-signing setup into a `cg-handoff` ZIP bundle must validate the bundle before handing it to a device. The repository includes `tools/validate_cg_handoff_bundle.sh` for this preflight.
+
+```bash
+bash tools/validate_cg_handoff_bundle.sh path/to/pixel_local__bundle.zip
+```
+
+The validator rejects the known early-failure classes before the bundle reaches `cg-handoff`: missing or duplicate `BUNDLE_MANIFEST.txt`, CRLF in the manifest or entrypoint, missing entrypoint, mismatched member size or SHA-256, and non-unique `cg_handoff_run_mode` metadata. A valid bundle prints `RESULT: UODA_CG_HANDOFF_BUNDLE_VALIDATE_DONE`.
+
 ## Local signing compatibility
 
 `app/build.gradle.kts` supports release signing through environment variables. The public-release workflow injects these values through GitHub Actions secrets and materializes the keystore only for the lifetime of the GitHub-hosted runner.
