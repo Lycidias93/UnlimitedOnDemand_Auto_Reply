@@ -26,7 +26,9 @@ Typical first-time setup:
 bash tools/prepare_release_signing_secrets.sh --generate --upload
 ```
 
-The helper prompts for the store and key passwords without echoing them, creates `app/AndroidKeystore/release.jks` when requested, derives the certificate SHA-256 fingerprint, and uploads the five required GitHub Actions secrets with `gh secret set`. It prints only non-secret status fields and the public certificate fingerprint.
+The helper prompts for the store and key passwords without echoing them, creates `app/AndroidKeystore/release.jks` when requested, derives the certificate SHA-256 fingerprint, verifies that the private key can be read with the selected Android signing password, and uploads the five required GitHub Actions secrets with `gh secret set`. It prints only non-secret status fields and the public certificate fingerprint.
+
+Modern `keytool` commonly creates PKCS12 keystores where the private-key password is effectively the store password. If a different key password was supplied but Android signing can only read the key with the store password, the helper normalizes `UODA_RELEASE_KEY_PASSWORD` to the store password before uploading the GitHub secret. This avoids release-build failures such as `Get Key failed: Given final block not properly padded` during `:app:packageRelease`.
 
 To validate an existing local keystore without uploading secrets:
 
