@@ -37,6 +37,14 @@ If you trust me, you can simply download the APK from the [releases section](htt
 Alternatively get Android Studio running, clone the repository and build it yourself. The sourcecode is not really that complicated and reviewing it should not be too hard
 (there is just the main activity, and the notification listener).
 
+### Debug builds vs. stable signed releases
+
+GitHub Actions debug APKs are development/test artifacts. They are useful for validating runtime diagnostics, but they are not the stable update channel and may use Android debug signing.
+
+Stable public releases must be produced by the **Publish signed UODA release** workflow and its long-lived release signing key. The signed release workflow verifies the APK signature and compares the signing certificate SHA-256 fingerprint with the configured `UODA_RELEASE_CERT_SHA256` secret before uploading a release candidate or publishing a GitHub Release.
+
+Maintainer signing details and first-stable migration notes are documented in [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md).
+
 ## Usage
 After installing the app, some configuration is required.
 
@@ -79,6 +87,10 @@ The settings screen includes a safe internal dry-run test notification and a **C
 - current dry-run/profile state and bounded runtime counters.
 
 The copied status intentionally avoids copying the actual notification body, reply text or target phone number.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for user-facing release notes.
 
 ## License
 This project is licensed under the GNU General Public License v3.0 or later – see the [LICENSE](LICENSE) file for details.
