@@ -13,6 +13,7 @@ build/
 Thumbs.db
 
 # Signing material must never be committed
+app/AndroidKeystore/
 *.jks
 *.keystore
 *.p12
