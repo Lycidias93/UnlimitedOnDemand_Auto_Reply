@@ -26,7 +26,7 @@ Environment overrides:
   UODA_RELEASE_KEYSTORE_PATH        default: app/AndroidKeystore/release.jks
   UODA_RELEASE_KEY_ALIAS            default: uoda-release
   UODA_RELEASE_STORE_PASSWORD       prompted when needed
-  UODA_RELEASE_KEY_PASSWORD         prompted when needed; may equal store password
+  UODA_RELEASE_KEY_PASSWORD         prompted when needed; defaults to store password
   UODA_RELEASE_DNAME                keytool distinguished name
   UODA_RELEASE_VALIDITY_DAYS        default: 10000
 
@@ -88,6 +88,29 @@ cert_sha256() {
     | tr '[:upper:]' '[:lower:]'
 }
 
+can_read_private_key() {
+  local candidate_key_password="$1"
+  local tmp_dir tmp_keystore
+  tmp_dir="$(mktemp -d)"
+  tmp_keystore="$tmp_dir/key-read-test.p12"
+  if keytool -importkeystore \
+    -srckeystore "$keystore_path" \
+    -srcstorepass "$store_password" \
+    -srcalias "$key_alias" \
+    -srckeypass "$candidate_key_password" \
+    -destkeystore "$tmp_keystore" \
+    -deststoretype PKCS12 \
+    -deststorepass "temporary-validation-password-123" \
+    -destkeypass "temporary-validation-password-123" \
+    -destalias "$key_alias" \
+    -noprompt >/dev/null 2>&1; then
+    rm -rf "$tmp_dir"
+    return 0
+  fi
+  rm -rf "$tmp_dir"
+  return 1
+}
+
 set_gh_secret() {
   local name="$1"
   local value="$2"
@@ -112,6 +135,9 @@ if (( generate == 1 )); then
   fi
   mkdir -p "$(dirname "$keystore_path")"
   umask 077
+  # Modern keytool defaults to PKCS12, where the key password is often
+  # effectively tied to the store password. Generate with the selected key
+  # password, then validate and normalize below before uploading workflow secrets.
   keytool -genkeypair \
     -keystore "$keystore_path" \
     -storepass "$store_password" \
@@ -132,6 +158,17 @@ fingerprint="$(cert_sha256)"
 if [[ ! "$fingerprint" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Could not determine certificate SHA-256 fingerprint for alias '$key_alias'." >&2
   exit 1
+fi
+
+if ! can_read_private_key "$key_password"; then
+  if [[ "$key_password" != "$store_password" ]] && can_read_private_key "$store_password"; then
+    key_password="$store_password"
+    echo "INFO: UODA release key password normalized to store password for Android signing compatibility."
+  else
+    echo "Could not read private key for alias '$key_alias' with the selected key password." >&2
+    echo "If this is a PKCS12 keystore, retry with UODA_RELEASE_KEY_PASSWORD equal to UODA_RELEASE_STORE_PASSWORD." >&2
+    exit 1
+  fi
 fi
 
 if (( verify == 1 )); then
