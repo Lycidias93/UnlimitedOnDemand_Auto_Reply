@@ -43,7 +43,7 @@ GitHub Actions debug APKs are development/test artifacts. They are useful for va
 
 Stable public releases must be produced by the **Publish signed UODA release** workflow and its long-lived release signing key. The signed release workflow verifies the APK signature and compares the signing certificate SHA-256 fingerprint with the configured `UODA_RELEASE_CERT_SHA256` secret before uploading a release candidate or publishing a GitHub Release.
 
-Maintainer signing details and first-stable migration notes are documented in [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md).
+Maintainer signing details, the local secret setup helper and first-stable migration notes are documented in [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md).
 
 ## Usage
 After installing the app, some configuration is required.
