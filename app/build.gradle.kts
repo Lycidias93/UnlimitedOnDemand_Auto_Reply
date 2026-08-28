@@ -4,6 +4,19 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val uodaReleaseKeystorePath = System.getenv("UODA_RELEASE_KEYSTORE_PATH")
+val uodaReleaseStorePassword = System.getenv("UODA_RELEASE_STORE_PASSWORD")
+val uodaReleaseKeyAlias = System.getenv("UODA_RELEASE_KEY_ALIAS")
+val uodaReleaseKeyPassword = System.getenv("UODA_RELEASE_KEY_PASSWORD")
+    ?.takeIf { it.isNotBlank() }
+    ?: uodaReleaseStorePassword
+val uodaReleaseSigningConfigured = listOf(
+    uodaReleaseKeystorePath,
+    uodaReleaseStorePassword,
+    uodaReleaseKeyAlias,
+    uodaReleaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.defname.unlimitedondemandautoreply"
     compileSdk = 35
@@ -18,8 +31,22 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (uodaReleaseSigningConfigured) {
+            create("release") {
+                storeFile = file(uodaReleaseKeystorePath!!)
+                storePassword = uodaReleaseStorePassword
+                keyAlias = uodaReleaseKeyAlias
+                keyPassword = uodaReleaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (uodaReleaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
