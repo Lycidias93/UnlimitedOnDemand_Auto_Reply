@@ -46,7 +46,7 @@ Automation that wraps release-signing setup into a `cg-handoff` ZIP bundle must 
 bash tools/validate_cg_handoff_bundle.sh path/to/pixel_local__bundle.zip
 ```
 
-The validator rejects the known early-failure classes before the bundle reaches `cg-handoff`: missing or duplicate `BUNDLE_MANIFEST.txt`, CRLF in the manifest or entrypoint, missing entrypoint, mismatched member size or SHA-256, and non-unique `cg_handoff_run_mode` metadata. A valid bundle prints `RESULT: UODA_CG_HANDOFF_BUNDLE_VALIDATE_DONE`.
+The validator rejects the known early-failure classes before the bundle reaches `cg-handoff`: missing or duplicate `BUNDLE_MANIFEST.txt`, missing or unsupported `bundle_format_version`, CRLF in the manifest or entrypoint, missing entrypoint, mismatched member size or SHA-256, and non-unique `cg_handoff_run_mode` metadata. A valid bundle prints `RESULT: UODA_CG_HANDOFF_BUNDLE_VALIDATE_DONE` and includes `bundle_format_version=1` in the result.
 
 ## Local signing compatibility
 
