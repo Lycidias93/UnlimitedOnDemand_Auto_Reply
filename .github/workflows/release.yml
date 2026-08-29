@@ -94,6 +94,10 @@ jobs:
             test -n "${UODA_RELEASE_KEY_ALIAS:-}" || { echo "::error::Missing UODA_RELEASE_KEY_ALIAS"; exit 1; }
           fi
 
+      - name: Run unit tests before signed candidate build
+        if: ${{ env.PUBLISH_REQUESTED != 'true' }}
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
       - name: Materialize release keystore
         if: ${{ env.PUBLISH_REQUESTED != 'true' }}
         shell: bash
