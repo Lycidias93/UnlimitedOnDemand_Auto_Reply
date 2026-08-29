@@ -152,6 +152,7 @@ class MainActivity : ComponentActivity() {
 
     fun postInternalDryRunTestNotification() {
         LogManager.init(applicationContext)
+        RuntimeStatusManager.recordSelfTestResult(applicationContext, "requested")
 
         val profileEnabled =
             getSetting("profile_enabled").toBooleanStrictOrNull() ?: true
@@ -166,22 +167,27 @@ class MainActivity : ComponentActivity() {
 
         when {
             !profileEnabled -> {
+                RuntimeStatusManager.recordSelfTestResult(applicationContext, "blocked_profile_disabled")
                 LogManager.addLog("Internal test blocked: profile disabled")
                 return
             }
             !dryRun -> {
+                RuntimeStatusManager.recordSelfTestResult(applicationContext, "blocked_dry_run_disabled")
                 LogManager.addLog("Internal test blocked: dry run disabled")
                 return
             }
             !configComplete -> {
+                RuntimeStatusManager.recordSelfTestResult(applicationContext, "blocked_configuration_incomplete")
                 LogManager.addLog("Internal test blocked: configuration incomplete")
                 return
             }
             !checkNotificationServiceEnabled() -> {
+                RuntimeStatusManager.recordSelfTestResult(applicationContext, "blocked_notification_listener_disabled")
                 LogManager.addLog("Internal test blocked: notification listener disabled")
                 return
             }
             !checkNotificationPermission() -> {
+                RuntimeStatusManager.recordSelfTestResult(applicationContext, "blocked_notification_permission_missing")
                 LogManager.addLog("Internal test blocked: notification permission missing")
                 return
             }
@@ -218,7 +224,8 @@ class MainActivity : ComponentActivity() {
             InternalDryRunTestContract.NOTIFICATION_ID,
             notification
         )
-        LogManager.addLog("Internal dry-run notification posted")
+        RuntimeStatusManager.recordSelfTestResult(applicationContext, "posted")
+        LogManager.addLog("Internal dry-run self-test notification posted")
     }
 
     fun saveSetting(key: String, value: String) {
@@ -439,7 +446,7 @@ fun SettingsScreen(
                 enabled = profileEnabled && dryRun,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Post safe dry-run test notification")
+                Text("Run full dry-run self-test")
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -452,7 +459,7 @@ fun SettingsScreen(
             }
 
             Text(
-                text = "Uses the real notification listener and never sends an SMS.",
+                text = "Self-test uses the real notification listener, records listener health and never sends an SMS.",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.Gray,
                 modifier = Modifier.padding(top = 4.dp)
