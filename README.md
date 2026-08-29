@@ -32,7 +32,7 @@ otherwise, the app remains inactive. This allows you to turn the service on or o
 
 ## Installation
 
-If you trust me, you can simply download the APK from the [releases section](https://github.com/defname/UnlimitedOnDemand_Auto_Reply/releases) and install it on your Android device (you should not trust random people on the internet though).
+For this maintained fork, download the APK from the [releases section](https://github.com/Lycidias93/UnlimitedOnDemand_Auto_Reply/releases) and install it on your Android device.
 
 Alternatively get Android Studio running, clone the repository and build it yourself. The sourcecode is not really that complicated and reviewing it should not be too hard
 (there is just the main activity, and the notification listener).
