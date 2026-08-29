@@ -9,17 +9,29 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish the verified build as a GitHub Release
+        description: Publish a previously accepted release-candidate artifact as a GitHub Release
         required: true
         type: boolean
         default: false
+      accepted_run_id:
+        description: Workflow run ID that produced the accepted signed release-candidate artifact
+        required: false
+        type: string
+      accepted_apk_sha256:
+        description: SHA-256 of the accepted APK installed during live acceptance
+        required: false
+        type: string
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: uoda-public-release
   cancel-in-progress: false
+
+env:
+  PUBLISH_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.publish == true }}
 
 jobs:
   publish:
@@ -33,6 +45,8 @@ jobs:
       UODA_RELEASE_KEY_ALIAS: ${{ secrets.UODA_RELEASE_KEY_ALIAS }}
       UODA_RELEASE_KEY_PASSWORD: ${{ secrets.UODA_RELEASE_KEY_PASSWORD }}
       UODA_RELEASE_CERT_SHA256: ${{ secrets.UODA_RELEASE_CERT_SHA256 }}
+      ACCEPTED_RUN_ID: ${{ inputs.accepted_run_id }}
+      ACCEPTED_APK_SHA256: ${{ inputs.accepted_apk_sha256 }}
 
     steps:
       - name: Check out code
@@ -51,16 +65,37 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Validate release signing secrets
+      - name: Read release version
+        id: version
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${UODA_RELEASE_KEYSTORE_B64:-}" || { echo "::error::Missing UODA_RELEASE_KEYSTORE_B64"; exit 1; }
-          test -n "${UODA_RELEASE_STORE_PASSWORD:-}" || { echo "::error::Missing UODA_RELEASE_STORE_PASSWORD"; exit 1; }
-          test -n "${UODA_RELEASE_KEY_ALIAS:-}" || { echo "::error::Missing UODA_RELEASE_KEY_ALIAS"; exit 1; }
+          VERSION_NAME="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)"
+          test -n "$VERSION_NAME"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Validate publication inputs and secrets
+        shell: bash
+        run: |
+          set -euo pipefail
           test -n "${UODA_RELEASE_CERT_SHA256:-}" || { echo "::error::Missing UODA_RELEASE_CERT_SHA256"; exit 1; }
+          if [[ "${PUBLISH_REQUESTED}" == "true" ]]; then
+            test -n "${ACCEPTED_RUN_ID:-}" || { echo "::error::accepted_run_id is required when publish=true"; exit 1; }
+            test -n "${ACCEPTED_APK_SHA256:-}" || { echo "::error::accepted_apk_sha256 is required when publish=true"; exit 1; }
+            normalized="$(printf '%s' "$ACCEPTED_APK_SHA256" | tr -d ' :\r\n' | tr '[:upper:]' '[:lower:]')"
+            if [[ ! "$normalized" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::accepted_apk_sha256 must be a 64-character SHA-256 hex digest"
+              exit 1
+            fi
+            echo "accepted_apk_sha256=$normalized" >> "$GITHUB_ENV"
+          else
+            test -n "${UODA_RELEASE_KEYSTORE_B64:-}" || { echo "::error::Missing UODA_RELEASE_KEYSTORE_B64"; exit 1; }
+            test -n "${UODA_RELEASE_STORE_PASSWORD:-}" || { echo "::error::Missing UODA_RELEASE_STORE_PASSWORD"; exit 1; }
+            test -n "${UODA_RELEASE_KEY_ALIAS:-}" || { echo "::error::Missing UODA_RELEASE_KEY_ALIAS"; exit 1; }
+          fi
 
       - name: Materialize release keystore
+        if: ${{ env.PUBLISH_REQUESTED != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -69,18 +104,50 @@ jobs:
           printf '%s' "$UODA_RELEASE_KEYSTORE_B64" | base64 --decode > app/AndroidKeystore/release.jks
           test -s app/AndroidKeystore/release.jks
 
-      - name: Build signed release APK
+      - name: Build signed release candidate APK
+        if: ${{ env.PUBLISH_REQUESTED != 'true' }}
         run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Stage built release candidate APK
+        if: ${{ env.PUBLISH_REQUESTED != 'true' }}
+        shell: bash
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          APK="$(find app/build/outputs/apk/release -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          mkdir -p dist
+          cp "$APK" "dist/UnlimitedOnDemand_Auto_Reply_${VERSION_NAME}.apk"
+
+      - name: Download accepted release candidate APK
+        if: ${{ env.PUBLISH_REQUESTED == 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p accepted-candidate dist
+          gh run download "$ACCEPTED_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "UnlimitedOnDemand-signed-release-candidate-${VERSION_NAME}" \
+            --dir accepted-candidate
+          APK="$(find accepted-candidate -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          cp "$APK" "dist/UnlimitedOnDemand_Auto_Reply_${VERSION_NAME}.apk"
 
       - name: Verify release APK and signing certificate
         id: verify
         shell: bash
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
         run: |
           set -euo pipefail
-          APK="$(find app/build/outputs/apk/release -type f -name '*.apk' -print -quit)"
+          APK="dist/UnlimitedOnDemand_Auto_Reply_${VERSION_NAME}.apk"
           ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -type f -name zipalign -print | sort -V | tail -n 1)"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
-          test -n "$APK"
+          test -s "$APK"
           test -x "$ZIPALIGN"
           test -x "$APKSIGNER"
           "$ZIPALIGN" -c -P 16 -v 4 "$APK"
@@ -88,6 +155,7 @@ jobs:
           CERT_OUTPUT="$($APKSIGNER verify --print-certs "$APK")"
           ACTUAL_CERT="$(printf '%s\n' "$CERT_OUTPUT" | sed -n 's/.*certificate SHA-256 digest:[[:space:]]*//p' | head -n 1 | tr -d ' :\r\n' | tr '[:upper:]' '[:lower:]')"
           EXPECTED_CERT="$(printf '%s' "$UODA_RELEASE_CERT_SHA256" | tr -d ' :\r\n' | tr '[:upper:]' '[:lower:]')"
+          APK_SHA="$(sha256sum "$APK" | awk '{print $1}')"
           if [[ ! "$ACTUAL_CERT" =~ ^[0-9a-f]{64}$ ]]; then
             echo "::error::Unable to parse release signing certificate SHA-256 digest"
             exit 1
@@ -96,23 +164,52 @@ jobs:
             echo "::error::Release signing certificate fingerprint mismatch"
             exit 1
           fi
-          VERSION_NAME="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -n 1)"
-          test -n "$VERSION_NAME"
-          mkdir -p dist
-          DIST_APK="dist/UnlimitedOnDemand_Auto_Reply_${VERSION_NAME}.apk"
-          cp "$APK" "$DIST_APK"
+          if [[ "${PUBLISH_REQUESTED}" == "true" && "$APK_SHA" != "$accepted_apk_sha256" ]]; then
+            echo "::error::Accepted APK SHA mismatch: expected $accepted_apk_sha256 but staged $APK_SHA"
+            exit 1
+          fi
           echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
-          echo "apk_path=$DIST_APK" >> "$GITHUB_OUTPUT"
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+          echo "apk_sha256=$APK_SHA" >> "$GITHUB_OUTPUT"
+          echo "cert_sha256=$ACTUAL_CERT" >> "$GITHUB_OUTPUT"
+
+      - name: Write internal release evidence
+        shell: bash
+        env:
+          VERSION_NAME: ${{ steps.verify.outputs.version_name }}
+          APK_PATH: ${{ steps.verify.outputs.apk_path }}
+          APK_SHA256: ${{ steps.verify.outputs.apk_sha256 }}
+          CERT_SHA256: ${{ steps.verify.outputs.cert_sha256 }}
+        run: |
+          set -euo pipefail
+          cat > dist/release-evidence.txt <<EOF
+          version_name=$VERSION_NAME
+          commit_sha=$GITHUB_SHA
+          publish_requested=$PUBLISH_REQUESTED
+          accepted_run_id=${ACCEPTED_RUN_ID:-}
+          apk_path=$APK_PATH
+          apk_sha256=$APK_SHA256
+          cert_sha256=$CERT_SHA256
+          generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
 
       - name: Upload signed release candidate
+        if: ${{ env.PUBLISH_REQUESTED != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: UnlimitedOnDemand-signed-release-candidate-${{ steps.verify.outputs.version_name }}
           path: ${{ steps.verify.outputs.apk_path }}
           if-no-files-found: error
 
+      - name: Upload internal release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: UnlimitedOnDemand-release-evidence-${{ steps.verify.outputs.version_name }}
+          path: dist/release-evidence.txt
+          if-no-files-found: error
+
       - name: Prepare public release notes
-        if: ${{ inputs.publish }}
+        if: ${{ env.PUBLISH_REQUESTED == 'true' }}
         shell: bash
         env:
           VERSION_NAME: ${{ steps.verify.outputs.version_name }}
@@ -138,7 +235,7 @@ jobs:
           PY
 
       - name: Publish GitHub release
-        if: ${{ inputs.publish }}
+        if: ${{ env.PUBLISH_REQUESTED == 'true' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
