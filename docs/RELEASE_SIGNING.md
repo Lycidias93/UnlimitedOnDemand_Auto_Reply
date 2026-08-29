@@ -64,13 +64,20 @@ The first stable-release path keeps release minification disabled. This fork is 
 ## Publication flow
 
 1. Keep the release version in `app/build.gradle.kts` and the matching top section in `CHANGELOG.md` synchronized.
-2. Keep the normal debug build workflow green on `v0.2-safety-runtime`.
-3. Produce the stable-signed candidate from `v0.2-safety-runtime` without publishing it. Either run **Publish signed UODA release** with **publish** left off, or bump `.github/release-candidate.trigger` on `v0.2-safety-runtime`. The push-trigger path is candidate-only: it decodes the private keystore, builds `assembleRelease`, verifies 16 KB ZIP alignment, verifies the APK signature, compares the actual certificate fingerprint with `UODA_RELEASE_CERT_SHA256`, and uploads a signed release-candidate APK without creating a public release.
+2. Keep the normal debug build workflow green on `v0.2-safety-runtime`. The debug workflow runs unit tests before assembling the debug APK.
+3. Produce the stable-signed candidate from `v0.2-safety-runtime` without publishing it. Either run **Publish signed UODA release** with **publish** left off, or bump `.github/release-candidate.trigger` on `v0.2-safety-runtime`. The push-trigger path is candidate-only: it decodes the private keystore, builds `assembleRelease`, verifies 16 KB ZIP alignment, verifies the APK signature, compares the actual certificate fingerprint with `UODA_RELEASE_CERT_SHA256`, uploads a signed release-candidate APK, and uploads an internal release-evidence artifact without creating a public release.
 4. Install that signed candidate on the target device and complete live UODA acceptance. For a stable release, do not substitute an earlier debug-signed APK for this step.
-5. After live acceptance, run **Publish signed UODA release** from `v0.2-safety-runtime` with **publish** enabled. It repeats the signing and verification gates, extracts the matching user-facing changelog section, and creates the GitHub Release/tag with the signed APK attached.
-6. Never rotate the public signing key casually. A key change is an Android package-signature migration and must be treated as a breaking install/update event.
+5. Record the accepted candidate workflow run ID and the exact accepted APK SHA-256 from live acceptance.
+6. After live acceptance, run **Publish signed UODA release** from `v0.2-safety-runtime` with **publish** enabled and provide both `accepted_run_id` and `accepted_apk_sha256`. The publish path downloads that prior candidate artifact, verifies its APK SHA-256, verifies 16 KB ZIP alignment, verifies the APK signature, compares the signing certificate fingerprint with `UODA_RELEASE_CERT_SHA256`, extracts the matching user-facing changelog section, uploads an internal release-evidence artifact, and creates the GitHub Release/tag with that exact accepted APK attached.
+7. Never rotate the public signing key casually. A key change is an Android package-signature migration and must be treated as a breaking install/update event.
 
 The repository trigger exists so automation that can safely write to `v0.2-safety-runtime` but cannot invoke `workflow_dispatch` can request a candidate without weakening the publication gate. It never enables `publish` by itself; public publication remains an explicit `workflow_dispatch` action after live acceptance.
+
+The public publish path intentionally does **not** rebuild the APK. It promotes the already accepted candidate artifact and fails if the downloaded artifact SHA does not match the accepted SHA. This prevents publishing an APK that differs byte-for-byte from the one that was accepted on a device.
+
+## Internal release evidence
+
+Candidate and publish runs upload `UnlimitedOnDemand-release-evidence-<version>` as an internal GitHub Actions artifact. It records the version, commit SHA, publish mode, accepted run ID when applicable, APK SHA-256, signing certificate SHA-256 and generation time. This evidence is kept out of public release notes; public changelogs remain user-facing only.
 
 ## First stable-release migration
 
