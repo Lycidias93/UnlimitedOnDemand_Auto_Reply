@@ -63,6 +63,13 @@ if LC_ALL=C grep -q $'\r' "$script"; then
   exit 1
 fi
 
+start_count="$(grep -Fxc '# CG_HANDOFF_V1_START' "$script" || true)"
+end_count="$(grep -Fxc '# CG_HANDOFF_V1_END' "$script" || true)"
+if [[ "$start_count" != "1" || "$end_count" != "1" ]]; then
+  echo "FAIL: metadata_block_not_unique start_count=$start_count end_count=$end_count" >&2
+  exit 1
+fi
+
 run_mode_count="$(grep -Ec '^# cg_handoff_run_mode=' "$script" || true)"
 if [[ "$run_mode_count" != "1" ]]; then
   echo "FAIL: metadata_run_mode_not_unique count=$run_mode_count" >&2
@@ -109,4 +116,4 @@ for i in $(seq 1 "$member_count"); do
 done
 
 bundle_sha="$(sha256sum "$bundle" | awk '{print $1}')"
-echo "RESULT: UODA_CG_HANDOFF_BUNDLE_VALIDATE_DONE outcome=success bundle=$bundle bundle_sha256=$bundle_sha bundle_format_version=$bundle_format_version entrypoint=$entrypoint run_mode=$run_mode member_count=$member_count"
+echo "RESULT: UODA_CG_HANDOFF_BUNDLE_VALIDATE_DONE outcome=success bundle=$bundle bundle_sha256=$bundle_sha bundle_format_version=$bundle_format_version metadata_block=present entrypoint=$entrypoint run_mode=$run_mode member_count=$member_count"
