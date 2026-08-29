@@ -43,6 +43,8 @@ GitHub Actions debug APKs are development/test artifacts. They are useful for va
 
 Stable public releases must be produced by the **Publish signed UODA release** workflow and its long-lived release signing key. The signed release workflow verifies the APK signature and compares the signing certificate SHA-256 fingerprint with the configured `UODA_RELEASE_CERT_SHA256` secret before uploading a release candidate or publishing a GitHub Release.
 
+Public publishing uses an accepted release-candidate artifact: first build and live-test the signed candidate, then publish that exact APK by supplying its candidate run ID and accepted SHA-256. This avoids publishing a freshly rebuilt APK that was not the one accepted on a device.
+
 Maintainer signing details, the local secret setup helper and first-stable migration notes are documented in [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md).
 
 ## Usage
@@ -61,6 +63,8 @@ This is how the service is enabled and where you can disable it again.
 - **Notification Title:** Typically, the sender's number (e.g., your provider).
 - **Notification Text:** A unique keyword or phrase from the SMS body is sufficient.
 
+Matching normalizes case, repeated whitespace, zero-width characters and common Unicode variants before checking the configured title and text. The listener also considers common Android notification title/text extras such as big text, subtext, summary text and text lines.
+
 ### Configure the outgoing SMS
 
 - **Target Number:** Usually the same as the sender's number.
@@ -75,15 +79,21 @@ From that point on, the app will operate without any further user interaction.
 
 This fork defaults to dry-run mode for safer testing. In dry-run mode, a matching notification is evaluated through the real notification listener, but no SMS is sent.
 
-The settings screen includes a safe internal dry-run test notification and a **Copy runtime status** action. Runtime status is designed for diagnostics and records bounded, non-message-content fields such as:
+The settings screen includes a full dry-run self-test and a **Copy runtime status** action. The self-test posts an app-owned notification through the real notification listener, requires dry-run mode and never sends an SMS.
 
-- whether the listener has been created and received notification callbacks;
+Runtime status is designed for diagnostics and records bounded, non-message-content fields such as:
+
+- whether the listener has been created, connected and received notification callbacks;
+- listener health such as `ok`, `waiting_for_callback`, `stale_callback`, `disconnected` or `destroyed`;
+- callback and evaluation age in seconds;
 - the last seen notification package;
 - whether notification title/body fields were present;
 - package/title/body match results;
 - the latest decision such as `package_mismatch`, `title_mismatch`, `body_mismatch`, `dry_run_match_no_sms`, `cooldown_active`, `duplicate_notification` or `daily_limit_reached`;
 - the latest relevant evaluation where package matching passed, including safe internal dry-run tests;
 - the latest successful dry-run or scheduled/send decision, so later unrelated notifications do not hide a recent match;
+- the latest full dry-run self-test state such as `requested`, `posted`, `passed` or a bounded blocked/failed reason;
+- the latest SMS send result code and bounded result decision when real sending is enabled;
 - current dry-run/profile state and bounded runtime counters.
 
 The copied status intentionally avoids copying the actual notification body, reply text or target phone number.
