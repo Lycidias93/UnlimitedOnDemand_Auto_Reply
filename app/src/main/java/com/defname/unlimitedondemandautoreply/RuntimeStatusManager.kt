@@ -10,6 +10,7 @@ import java.util.Locale
 object RuntimeStatusManager {
     private const val PREFS_NAME = "listener_runtime_status"
     private const val MAX_VALUE_LENGTH = 160
+    private const val STALE_CALLBACK_MS = 2L * 60L * 60L * 1000L
 
     fun markAppOpened(context: Context) {
         prefs(context).edit()
@@ -22,6 +23,21 @@ object RuntimeStatusManager {
             .putBoolean("listener_created", true)
             .putLong("listener_created_at", System.currentTimeMillis())
             .putString("listener_state", "created")
+            .apply()
+    }
+
+    fun markListenerConnected(context: Context) {
+        prefs(context).edit()
+            .putBoolean("listener_created", true)
+            .putLong("listener_connected_at", System.currentTimeMillis())
+            .putString("listener_state", "connected")
+            .apply()
+    }
+
+    fun markListenerDisconnected(context: Context) {
+        prefs(context).edit()
+            .putLong("listener_disconnected_at", System.currentTimeMillis())
+            .putString("listener_state", "disconnected")
             .apply()
     }
 
@@ -38,6 +54,23 @@ object RuntimeStatusManager {
             .putLong("last_callback_at", System.currentTimeMillis())
             .putString("listener_state", "notification_callback")
             .apply()
+    }
+
+    fun recordSelfTestResult(context: Context, result: String) {
+        prefs(context).edit()
+            .putLong("last_self_test_at", System.currentTimeMillis())
+            .putString("last_self_test_result", sanitizeValue(result))
+            .apply()
+    }
+
+    fun recordSmsSendResult(context: Context, resultCode: Int, decision: String) {
+        val now = System.currentTimeMillis()
+        prefs(context).edit()
+            .putLong("last_sms_result_at", now)
+            .putInt("last_sms_result_code", resultCode)
+            .putString("last_sms_result_decision", sanitizeValue(decision))
+            .apply()
+        recordDecision(context, decision)
     }
 
     fun recordNotificationEvaluation(
@@ -99,7 +132,7 @@ object RuntimeStatusManager {
             .putLong("last_decision_at", now)
             .putString("last_decision", sanitizedDecision)
 
-        if (decision in setOf("dry_run_match_no_sms", "sms_scheduled", "sms_send_requested")) {
+        if (decision in setOf("dry_run_match_no_sms", "sms_scheduled", "sms_send_requested", "sms_sent")) {
             editor
                 .putLong("last_success_at", now)
                 .putString("last_success_decision", sanitizedDecision)
@@ -125,15 +158,24 @@ object RuntimeStatusManager {
         val status = prefs(context)
         val settings = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         val state = context.getSharedPreferences("runtime_state", Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
 
         return buildString {
             appendLine("UODA runtime status")
-            appendLine("generated_at=${formatTimestamp(System.currentTimeMillis())}")
+            appendLine("generated_at=${formatTimestamp(now)}")
             appendLine("listener_state=${status.getString("listener_state", "unknown")}")
+            appendLine("listener_health=${listenerHealth(status, now)}")
             appendLine("listener_created=${status.getBoolean("listener_created", false)}")
             appendLine("notification_callback_seen=${status.getBoolean("notification_callback_seen", false)}")
+            appendLine("app_opened_at=${formatStoredTimestamp(status, "app_opened_at")}")
+            appendLine("listener_created_at=${formatStoredTimestamp(status, "listener_created_at")}")
+            appendLine("listener_connected_at=${formatStoredTimestamp(status, "listener_connected_at")}")
+            appendLine("listener_disconnected_at=${formatStoredTimestamp(status, "listener_disconnected_at")}")
+            appendLine("listener_destroyed_at=${formatStoredTimestamp(status, "listener_destroyed_at")}")
             appendLine("last_callback_at=${formatStoredTimestamp(status, "last_callback_at")}")
+            appendLine("last_callback_age_seconds=${ageSeconds(status, "last_callback_at", now)}")
             appendLine("last_evaluation_at=${formatStoredTimestamp(status, "last_evaluation_at")}")
+            appendLine("last_evaluation_age_seconds=${ageSeconds(status, "last_evaluation_at", now)}")
             appendLine("last_seen_package=${status.getString("last_seen_package", "unknown")}")
             appendLine("configured_sms_app=${status.getString("configured_sms_app", settings.getString("sms_app", "unknown"))}")
             appendLine("profile_enabled=${status.getBoolean("profile_enabled", settings.getString("profile_enabled", "true") == "true")}")
@@ -160,6 +202,11 @@ object RuntimeStatusManager {
             appendLine("last_success_decision=${status.getString("last_success_decision", "unknown")}")
             appendLine("last_dry_run_match_at=${formatStoredTimestamp(status, "last_dry_run_match_at")}")
             appendLine("last_dry_run_match_decision=${status.getString("last_dry_run_match_decision", "unknown")}")
+            appendLine("last_self_test_at=${formatStoredTimestamp(status, "last_self_test_at")}")
+            appendLine("last_self_test_result=${status.getString("last_self_test_result", "unknown")}")
+            appendLine("last_sms_result_at=${formatStoredTimestamp(status, "last_sms_result_at")}")
+            appendLine("last_sms_result_code=${status.getInt("last_sms_result_code", Int.MIN_VALUE).toPrintableCode()}")
+            appendLine("last_sms_result_decision=${status.getString("last_sms_result_decision", "unknown")}")
             appendLine("last_notification_at=${formatStoredTimestamp(state, "last_notification_at")}")
             appendLine("last_send_at=${formatStoredTimestamp(state, "last_send_at")}")
             appendLine("daily_limit_date=${state.getString("daily_limit_date", "")}")
@@ -178,12 +225,43 @@ object RuntimeStatusManager {
         }
     }
 
+    private fun Int.toPrintableCode(): String {
+        return if (this == Int.MIN_VALUE) "unknown" else toString()
+    }
+
     private fun sanitizeValue(value: String): String {
         return value
             .replace('\n', ' ')
             .replace('\r', ' ')
             .filter { it.isLetterOrDigit() || it in " ._:-/@" }
             .take(MAX_VALUE_LENGTH)
+    }
+
+    private fun listenerHealth(
+        prefs: android.content.SharedPreferences,
+        now: Long
+    ): String {
+        val state = prefs.getString("listener_state", "unknown")
+        val callbackAt = prefs.getLong("last_callback_at", 0L)
+        val created = prefs.getBoolean("listener_created", false)
+
+        return when {
+            state == "destroyed" -> "destroyed"
+            state == "disconnected" -> "disconnected"
+            !created -> "not_created"
+            callbackAt == 0L -> "waiting_for_callback"
+            now - callbackAt > STALE_CALLBACK_MS -> "stale_callback"
+            else -> "ok"
+        }
+    }
+
+    private fun ageSeconds(
+        prefs: android.content.SharedPreferences,
+        key: String,
+        now: Long
+    ): String {
+        val value = prefs.getLong(key, 0L)
+        return if (value > 0L) ((now - value) / 1000L).coerceAtLeast(0L).toString() else "never"
     }
 
     private fun formatStoredTimestamp(
