@@ -96,7 +96,7 @@ Runtime status is designed for diagnostics and records bounded, non-message-cont
 - the latest SMS send result code and bounded result decision when real sending is enabled;
 - current dry-run/profile state and bounded runtime counters.
 
-The copied status intentionally avoids copying the actual notification body, reply text or target phone number.
+The copied status intentionally avoids copying the actual notification body, reply text or target phone number. Additional reliability details are documented in [docs/RUNTIME_RELIABILITY.md](docs/RUNTIME_RELIABILITY.md).
 
 ## Changelog
 
