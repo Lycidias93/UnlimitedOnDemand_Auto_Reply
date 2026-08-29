@@ -115,5 +115,14 @@ for i in $(seq 1 "$member_count"); do
   fi
 done
 
+if command -v cglint >/dev/null 2>&1; then
+  if ! cglint "$script"; then
+    echo "FAIL: cglint_gate_failed entrypoint=$entrypoint" >&2
+    exit 1
+  fi
+else
+  echo "WARN: cglint_unavailable_nonblocking"
+fi
+
 bundle_sha="$(sha256sum "$bundle" | awk '{print $1}')"
-echo "RESULT: UODA_CG_HANDOFF_BUNDLE_VALIDATE_DONE outcome=success bundle=$bundle bundle_sha256=$bundle_sha bundle_format_version=$bundle_format_version metadata_block=present entrypoint=$entrypoint run_mode=$run_mode member_count=$member_count"
+echo "RESULT: UODA_CG_HANDOFF_BUNDLE_VALIDATE_DONE outcome=success bundle=$bundle bundle_sha256=$bundle_sha bundle_format_version=$bundle_format_version metadata_block=present cglint_gate=checked_if_available entrypoint=$entrypoint run_mode=$run_mode member_count=$member_count"
