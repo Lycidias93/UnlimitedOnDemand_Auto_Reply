@@ -159,6 +159,8 @@ object RuntimeStatusManager {
         val settings = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         val state = context.getSharedPreferences("runtime_state", Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
+        val realSmsArmedUntilMs = settings.getString("real_sms_armed_until_ms", "0")
+            ?.toLongOrNull() ?: 0L
 
         return buildString {
             appendLine("UODA runtime status")
@@ -180,6 +182,9 @@ object RuntimeStatusManager {
             appendLine("configured_sms_app=${status.getString("configured_sms_app", settings.getString("sms_app", "unknown"))}")
             appendLine("profile_enabled=${status.getBoolean("profile_enabled", settings.getString("profile_enabled", "true") == "true")}")
             appendLine("dry_run=${status.getBoolean("dry_run", settings.getString("dry_run", "true") == "true")}")
+            appendLine("real_sms_armed=${realSmsArmedUntilMs > now}")
+            appendLine("real_sms_armed_until=${if (realSmsArmedUntilMs > 0L) formatTimestamp(realSmsArmedUntilMs) else "never"}")
+            appendLine("real_sms_armed_seconds_remaining=${if (realSmsArmedUntilMs > now) ((realSmsArmedUntilMs - now) / 1000L).toString() else "0"}")
             appendLine("title_present=${status.getBoolean("last_title_present", false)}")
             appendLine("body_present=${status.getBoolean("last_body_present", false)}")
             appendLine("package_match=${status.getString("package_match", "unknown")}")

@@ -79,6 +79,8 @@ From that point on, the app will operate without any further user interaction.
 
 This fork defaults to dry-run mode for safer testing. In dry-run mode, a matching notification is evaluated through the real notification listener, but no SMS is sent.
 
+When dry-run is turned off, real SMS sending is still blocked until you explicitly arm real SMS for a short 30-minute window. This two-step arm prevents accidental live sends while keeping the real path testable on purpose.
+
 The settings screen includes a full dry-run self-test and a **Copy runtime status** action. The self-test posts an app-owned notification through the real notification listener, requires dry-run mode and never sends an SMS.
 
 Runtime status is designed for diagnostics and records bounded, non-message-content fields such as:
@@ -94,7 +96,7 @@ Runtime status is designed for diagnostics and records bounded, non-message-cont
 - the latest successful dry-run or scheduled/send decision, so later unrelated notifications do not hide a recent match;
 - the latest full dry-run self-test state such as `requested`, `posted`, `passed` or a bounded blocked/failed reason;
 - the latest SMS send result code and bounded result decision when real sending is enabled;
-- current dry-run/profile state and bounded runtime counters.
+- current dry-run/profile state, real-SMS arm state and bounded runtime counters.
 
 The copied status intentionally avoids copying the actual notification body, reply text or target phone number. Additional reliability details are documented in [docs/RUNTIME_RELIABILITY.md](docs/RUNTIME_RELIABILITY.md).
 
@@ -104,3 +106,8 @@ See [CHANGELOG.md](CHANGELOG.md) for user-facing release notes.
 
 ## License
 This project is licensed under the GNU General Public License v3.0 or later – see the [LICENSE](LICENSE) file for details.
+
+
+## Real SMS arming
+
+Dry-run OFF is not sufficient to send a real SMS. Use **Arm real SMS for 30 min** to open the short live-send arm window and **Disarm** to close it again. Without an active arm window, matched notifications record `real_sms_disarmed` and no SMS is sent.

@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.7-alpha]
+
+- Adds a two-step real-SMS arming gate: turning dry-run off is no longer enough to send real SMS; real sending must be armed for a short time window.
+- Shows real-SMS arm state in the app and copied runtime status.
+- Blocks matched notifications with `real_sms_disarmed` when dry-run is off but the real-SMS arm window is not active.
+- Adds unit coverage for the real-SMS arming guard.
+
 ## [v0.6-alpha]
 
 - Publishes accepted release-candidate APKs without rebuilding them during the public-release step.

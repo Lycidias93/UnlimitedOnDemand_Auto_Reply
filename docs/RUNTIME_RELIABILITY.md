@@ -79,3 +79,10 @@ Public releases must not publish a newly rebuilt APK after live acceptance. The 
 2. Publish path: download the accepted candidate artifact by run ID, verify its SHA-256 against the accepted device-installed APK, verify signing and alignment again, then attach that exact APK to the GitHub Release.
 
 The workflow also uploads an internal release-evidence artifact. Public changelogs remain user-facing and do not include internal hashes, workflow IDs or verification walls.
+
+
+## Real SMS arming
+
+Dry-run OFF is not sufficient to send a real SMS. The app requires a short explicit arm window before a matched notification can schedule or request a real SMS send. If a notification matches while dry-run is off and the arm window is not active, the listener records `real_sms_disarmed`, logs the block and does not send an SMS.
+
+Copied runtime status includes `real_sms_armed`, `real_sms_armed_until` and `real_sms_armed_seconds_remaining` so a handoff can distinguish a safe dry-run state from an intentionally armed live-send state.

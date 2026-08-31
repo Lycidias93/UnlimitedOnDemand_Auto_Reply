@@ -59,6 +59,7 @@ private const val DEFAULT_DRY_RUN = true
 private const val DEFAULT_COOLDOWN_MS = 15L * 60L * 1000L
 private const val DEFAULT_DEDUPE_WINDOW_MS = 10L * 60L * 1000L
 private const val DEFAULT_DAILY_LIMIT = 3
+private const val DEFAULT_REAL_SMS_ARMED_UNTIL_MS = 0L
 
 internal data class NotificationMatchResult(
     val packageMatch: Boolean,
@@ -93,6 +94,10 @@ internal fun normalizeNotificationValue(value: String): String {
         .replace(Regex("\\s+"), " ")
         .trim()
         .lowercase(Locale.ROOT)
+}
+
+internal fun isRealSmsArmed(nowMs: Long, armedUntilMs: Long): Boolean {
+    return armedUntilMs > nowMs
 }
 
 /**
@@ -303,6 +308,18 @@ class MyNotificationListenerService : NotificationListenerService() {
             return
         }
 
+        val realSmsArmedUntilMs = readLongSetting(
+            prefs,
+            "real_sms_armed_until_ms",
+            DEFAULT_REAL_SMS_ARMED_UNTIL_MS
+        )
+        if (!isRealSmsArmed(now, realSmsArmedUntilMs)) {
+            RuntimeStatusManager.recordDecision(applicationContext, "real_sms_disarmed")
+            LogManager.addLog("Skipped: real SMS not armed")
+            showNotification("Real SMS blocked", "Dry run is off, but real SMS is not armed.")
+            return
+        }
+
         markScheduled(statePrefs, notificationKey, now)
         RuntimeStatusManager.recordDecision(applicationContext, "sms_scheduled")
         LogManager.addLog("Notification matched. SMS scheduled in ${delay / 1000}s.")
@@ -354,6 +371,15 @@ class MyNotificationListenerService : NotificationListenerService() {
     ): Boolean {
         val value = prefs.getString(key, null)
         return value?.takeIf { it.isNotBlank() }?.toBooleanStrictOrNull() ?: defaultValue
+    }
+
+    private fun readLongSetting(
+        prefs: android.content.SharedPreferences,
+        key: String,
+        defaultValue: Long
+    ): Long {
+        val value = prefs.getString(key, null)
+        return value?.takeIf { it.isNotBlank() }?.toLongOrNull() ?: defaultValue
     }
 
     private fun notificationTitle(extras: android.os.Bundle): String {

@@ -75,6 +75,7 @@ import androidx.core.content.edit
 import com.defname.unlimitedondemandautoreply.ui.theme.SmsTestAppTheme
 
 private const val REQUEST_CODE_POST_NOTIFICATIONS = 1001
+private const val REAL_SMS_ARM_WINDOW_MS = 30L * 60L * 1000L
 
 /**
  * MainActivity for the app.
@@ -148,6 +149,19 @@ class MainActivity : ComponentActivity() {
 
     fun copyRuntimeStatus() {
         RuntimeStatusManager.copyStatusToClipboard(applicationContext)
+    }
+
+    fun armRealSms() {
+        val armedUntil = System.currentTimeMillis() + REAL_SMS_ARM_WINDOW_MS
+        saveSetting("real_sms_armed_until_ms", armedUntil.toString())
+        RuntimeStatusManager.recordDecision(applicationContext, "real_sms_armed")
+        LogManager.addLog("Real SMS armed for 30 minutes")
+    }
+
+    fun disarmRealSms() {
+        saveSetting("real_sms_armed_until_ms", "0")
+        RuntimeStatusManager.recordDecision(applicationContext, "real_sms_disarmed")
+        LogManager.addLog("Real SMS disarmed")
     }
 
     fun postInternalDryRunTestNotification() {
@@ -268,7 +282,9 @@ fun SettingsScreen(
     checkNotificationServiceEnabled: () -> Boolean,
     getDefaultSmsPackage: () -> String?,
     onPostInternalDryRunTest: () -> Unit,
-    onCopyRuntimeStatus: () -> Unit
+    onCopyRuntimeStatus: () -> Unit,
+    onArmRealSms: () -> Unit,
+    onDisarmRealSms: () -> Unit
 ) {
     var smsPermissionGranted by remember { mutableStateOf(checkSMSPermissions()) }
     var notificationPermissionGranted by remember { mutableStateOf(checkNotificationPermission()) }
@@ -284,6 +300,7 @@ fun SettingsScreen(
     var profileName by remember { mutableStateOf(onGetSetting("profile_name")) }
     var profileEnabled by remember { mutableStateOf(onGetSetting("profile_enabled").toBooleanStrictOrNull() ?: true) }
     var dryRun by remember { mutableStateOf(onGetSetting("dry_run").toBooleanStrictOrNull() ?: true) }
+    var realSmsArmedUntilMs by remember { mutableStateOf(onGetSetting("real_sms_armed_until_ms").toLongOrNull() ?: 0L) }
 
     LaunchedEffect(Unit) {
         smsPermissionGranted = checkSMSPermissions()
@@ -299,6 +316,7 @@ fun SettingsScreen(
         profileName = onGetSetting("profile_name")
         profileEnabled = onGetSetting("profile_enabled").toBooleanStrictOrNull() ?: true
         dryRun = onGetSetting("dry_run").toBooleanStrictOrNull() ?: true
+        realSmsArmedUntilMs = onGetSetting("real_sms_armed_until_ms").toLongOrNull() ?: 0L
     }
 
     Surface(
@@ -401,12 +419,55 @@ fun SettingsScreen(
                     onCheckedChange = { enabled ->
                         dryRun = enabled
                         onSaveSetting("dry_run", enabled.toString())
+                        if (enabled) {
+                            realSmsArmedUntilMs = 0L
+                            onSaveSetting("real_sms_armed_until_ms", "0")
+                        }
                         LogManager.addLog(if (enabled) "Dry run enabled" else "Dry run disabled")
                     }
                 )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
+
+            if (!dryRun) {
+                val realSmsArmed = realSmsArmedUntilMs > System.currentTimeMillis()
+                Text(
+                    text = if (realSmsArmed) "Real SMS armed: ON" else "Real SMS armed: OFF",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (realSmsArmed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                )
+                Text(
+                    text = "Dry-run OFF still blocks real SMS unless armed for the next 30 minutes.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                )
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    androidx.compose.material3.Button(
+                        onClick = {
+                            realSmsArmedUntilMs = System.currentTimeMillis() + REAL_SMS_ARM_WINDOW_MS
+                            onArmRealSms()
+                        },
+                        enabled = profileEnabled,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp)
+                    ) {
+                        Text("Arm real SMS for 30 min")
+                    }
+                    androidx.compose.material3.Button(
+                        onClick = {
+                            realSmsArmedUntilMs = 0L
+                            onDisarmRealSms()
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Disarm")
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             Row(modifier = Modifier.fillMaxWidth()) {
                 androidx.compose.material3.Button(
@@ -608,7 +669,9 @@ fun MainScreen(activity: MainActivity) {
                 checkNotificationServiceEnabled = activity::checkNotificationServiceEnabled,
                 getDefaultSmsPackage = { Telephony.Sms.getDefaultSmsPackage(activity) },
                 onPostInternalDryRunTest = activity::postInternalDryRunTestNotification,
-                onCopyRuntimeStatus = activity::copyRuntimeStatus
+                onCopyRuntimeStatus = activity::copyRuntimeStatus,
+                onArmRealSms = activity::armRealSms,
+                onDisarmRealSms = activity::disarmRealSms
             )
             1 -> LogScreen()
         }
